@@ -1,0 +1,14 @@
+{
+  "name": "gyruss-purescript",
+  "version": "0.0.0",
+  "description": "Gyruss clone in PureScript.",
+  "devDependencies": {
+    "http-server":      "*"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "build": "./build.sh --any"
+  },
+  "author": "Sean Seefried <sean.seefried@gmail.com>",
+  "license": "MIT"
+}
