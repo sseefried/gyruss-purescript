@@ -1,10 +1,11 @@
 module Gyruss.Main where
 
 import Gyruss.Types
-
+import Gyruss.Sounds
 
 import Prelude
 
+import Audio.WebAudio.Types
 import Control.Monad.Eff (Eff)
 import Control.Monad
 import Control.Monad.ST
@@ -35,14 +36,17 @@ framesPerSecond = 30.0
 
 --------------------------------------------------------------------------------
 
-main :: forall s e. Eff (st :: ST s, canvas :: Canvas, dom :: DOM | e) Unit
+main :: forall s e. Eff (st :: ST s, wau :: WebAudio, canvas :: Canvas, dom :: DOM | e) Unit
 main = do
-  st <- defaultState
+  sounds <- makeSounds
+  state <- defaultState sounds
+  st <- newSTRef state
   resize st
   setInterval globalWindow (1000.0/framesPerSecond) $ render st
   subscribeKeyCode st KeydownEvent keydown
   subscribeTick st
   subscribeMousePos st MouseMoveEvent mouseMove
+  startSounds st
   return unit
 
 -- |Handles window resizing by stretching the canvas to fit the
@@ -70,15 +74,15 @@ calcShipPos p =
   let ang = angleFor p
   in { x: shipCircleRadius*cos ang, y: -shipCircleRadius*sin ang }
 
-defaultState :: forall s e. (Eff (st :: ST s, canvas :: Canvas | e)
-                              (STRef s State))
-defaultState = do
+defaultState :: forall e. Sounds -> (Eff (canvas :: Canvas | e) State)
+defaultState sounds = do
   Just canvas <- getCanvasElementById "canvas"
   ctx <- getContext2D canvas
-  newSTRef $
+  return $
     { ship:       ship { x: worldWidth/2.0, y: worldWidth }
     , screenSize: { w: 0.0, h: 0.0}
     , context2D:  ctx
+    , sounds: sounds
     }
 
 

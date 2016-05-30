@@ -1,8 +1,11 @@
 module Gyruss.Types where
 
+
+import Audio.WebAudio.Types
 import Data.Maybe (Maybe)
 import Data.Tuple
 import Graphics.Canvas
+
 
 -- strictly these should be Ints but it's more convenient for them
 -- to be Number`s
@@ -28,4 +31,11 @@ type State =
   { ship       :: Ship
   , screenSize :: Size
   , context2D  :: Context2D
+  , sounds     :: Sounds
   }
+
+type Sounds = {
+      context         :: AudioContext
+    , musicBuffer     :: Maybe AudioBuffer
+    , fireBuffer      :: Maybe AudioBuffer
+    }

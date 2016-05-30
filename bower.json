@@ -24,7 +24,8 @@
         "purescript-maybe":                "0.3.5",
         "purescript-tuples":               "0.4.0",
         "purescript-strings":              "0.7.1",
-        "purescript-simple-dom":           "aktowns/purescript-simple-dom#c3a864a0a6f78bb7341467d9bedfb8fcc056caba",
+        "purescript-simple-dom":           "sseefried/purescript-simple-dom#c47f8ea0a55855aec07569b3358b4ecb58e40411",
+        "purescript-webaudio":             "sseefried/purescript-webaudio#de0a923e749ae4b9a5abfd5f332d3e2631327b1e",
         "purescript-canvas":               "0.5.4",
         "purescript-debug":                "0.1.7"
     }
