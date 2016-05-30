@@ -91,12 +91,15 @@ R = (function (document, undefined) {
             }
         };
 
+        var rand = Math.floor(Math.random() * 1000000);
+
         // If the module already has text because we're using a factory
         // function, then there's no need to load the file!
         if (module.t) {
             request.onload();
         } else {
-            request.open("GET", location, true);
+            // sseefried: Add a random id to prevent caching
+            request.open("GET", location + "?id=" + rand, true);
             request.send();
         }
     }
