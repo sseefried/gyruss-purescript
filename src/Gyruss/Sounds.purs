@@ -45,7 +45,7 @@ startSounds st = do
 
   loadAudioBuffer "./tocata.ogg" state.sounds.context (\buf -> do
     modifySTRef st (\state -> state { sounds = state.sounds { musicBuffer = Just buf } })
-    playBufferedSound state.sounds (Just buf)
+--    playBufferedSound state.sounds (Just buf)
     return unit)
 
 loadAudioBuffer :: forall e f.

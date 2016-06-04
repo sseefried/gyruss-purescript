@@ -3,6 +3,7 @@ module Gyruss.Types where
 
 import Audio.WebAudio.Types
 import Data.Maybe (Maybe)
+import Data.List
 import Data.Tuple
 import Graphics.Canvas
 
@@ -10,28 +11,47 @@ import Graphics.Canvas
 -- strictly these should be Ints but it's more convenient for them
 -- to be Number`s
 type Size = { w :: Number
-            , h :: Number
-            }
+            , h :: Number }
 
 type Pos = { x :: Number, y :: Number }
 
+type Polar = { r :: Number
+              , ang :: Number }
+
+type KeyStates = { clockwise :: KeyState
+                 , anticlockwise :: KeyState
+                 , fire :: KeyState}
+
+data KeyState
+  = KeyUp
+  | KeyDown
+
 data Msg
-  = Fire
-  | MouseMove (Size -> Pos)
-  | Tick Number
+  = Fire                KeyState
+  | Clockwise           KeyState
+  | Anticlockwise       KeyState
+  | MouseMove           (Size -> Pos)
+  | Tick                Number
+  | Resize              Size
   | NoOp
-  | Resize Size
+
+data SoundEvent
+  = FireSound
 
 type Ship =
-  { pos     :: { x :: Number, y :: Number }
-  , blaster :: Maybe (Tuple Number Number) -- Nothing means it hasn't been fired
+  { ang     :: Number
+  , angVel  :: Number
+  , blaster :: Maybe Polar -- Nothing means it hasn't been fired
   }
 
 type State =
-  { ship       :: Ship
-  , screenSize :: Size
-  , context2D  :: Context2D
-  , sounds     :: Sounds
+  { context2D   :: Context2D
+  , canvas      :: CanvasElement
+  , keys        :: KeyStates
+  , ship        :: Ship
+  , screenSize  :: Size
+  , sounds      :: Sounds
+  , soundEvents :: List SoundEvent
   }
 
 type Sounds = {
