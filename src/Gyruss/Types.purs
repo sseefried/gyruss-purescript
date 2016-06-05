@@ -2,6 +2,8 @@ module Gyruss.Types where
 
 
 import Audio.WebAudio.Types
+import Control.Monad.Eff
+import Control.Monad.Eff.Random
 import Data.Maybe (Maybe)
 import Data.List
 import Data.Tuple
@@ -17,6 +19,12 @@ type Pos = { x :: Number, y :: Number }
 
 type Polar = { r :: Number
               , ang :: Number }
+
+type Star =
+  { r   :: Number
+  , ang :: Number
+  , vel :: Number
+  }
 
 type KeyStates = { clockwise :: KeyState
                  , anticlockwise :: KeyState
@@ -45,13 +53,16 @@ type Ship =
   }
 
 type State =
-  { context2D   :: Context2D
-  , canvas      :: CanvasElement
-  , keys        :: KeyStates
-  , ship        :: Ship
-  , screenSize  :: Size
-  , sounds      :: Sounds
-  , soundEvents :: List SoundEvent
+  { context2D          :: Context2D
+  , canvas             :: CanvasElement
+  , keys               :: KeyStates
+  , ship               :: Ship
+  , screenSize         :: Size
+  , sounds             :: Sounds
+  , soundEvents        :: List SoundEvent
+  , starCollectionIdx  :: Int
+  , starCollection     :: Array Star
+  , starField          :: Array Star
   }
 
 type Sounds = {

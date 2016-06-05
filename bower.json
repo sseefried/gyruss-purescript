@@ -27,6 +27,7 @@
         "purescript-simple-dom":           "sseefried/purescript-simple-dom#c47f8ea0a55855aec07569b3358b4ecb58e40411",
         "purescript-webaudio":             "sseefried/purescript-webaudio#de0a923e749ae4b9a5abfd5f332d3e2631327b1e",
         "purescript-canvas":               "0.5.4",
-        "purescript-debug":                "0.1.7"
+        "purescript-debug":                "0.1.7",
+        "purescript-random":               "0.2.3"
     }
 }

@@ -6,12 +6,14 @@ import Gyruss.Sounds
 import Prelude
 
 import Audio.WebAudio.Types
-import Control.Monad.Eff (Eff)
 import Control.Monad
+import Control.Monad.Eff               (Eff)
+import Control.Monad.Eff.Random
 import Control.Monad.ST
-import Data.List
-import Data.Maybe (Maybe(..))
-import Data.Tuple (Tuple(..))
+import Data.Array
+import Data.Foldable
+import Data.List                       (List(..))
+import Data.Maybe
 import Data.Traversable
 import Data.Int
 import DOM
@@ -36,6 +38,8 @@ Principles of input handling:
 worldWidth :: Number
 worldWidth = 100.0
 
+maxStarR :: Number
+maxStarR = worldWidth
 
 shipCircleRadius :: Number
 shipCircleRadius = 40.0
@@ -58,9 +62,22 @@ blasterVel = 200.0
 framesPerSecond :: Number
 framesPerSecond = 60.0
 
+numStars :: Int
+numStars = 70
+
+generatedStars :: Int
+generatedStars = 1000
+
+minStarVel :: Number
+minStarVel = 20.0
+
+maxStarVel :: Number
+maxStarVel = 100.0
+
 --------------------------------------------------------------------------------
 
-main :: forall s e. Eff (st :: ST s, wau :: WebAudio, canvas :: Canvas, dom :: DOM | e) Unit
+main :: forall s e. Eff (random :: RANDOM, st :: ST s, wau :: WebAudio
+                        , canvas :: Canvas, dom :: DOM | e) Unit
 main = do
   sounds <- makeSounds
   state <- defaultState sounds
@@ -108,18 +125,24 @@ shipPos ship = { x:  shipCircleRadius*cos ship.ang
                , y: -shipCircleRadius*sin ship.ang }
 
 
-defaultState :: forall e. Sounds -> (Eff (canvas :: Canvas | e) State)
+defaultState :: forall e. Sounds -> Eff (random :: RANDOM, canvas :: Canvas | e) State
 defaultState sounds = do
   Just canvas <- getCanvasElementById "canvas"
   ctx <- getContext2D canvas
+  stars <- randomStars generatedStars
   return $
-    { ship:       newShip (pi/2.0)
-    , keys: { clockwise: KeyUp, anticlockwise: KeyUp, fire: KeyUp }
-    , screenSize: { w: 0.0, h: 0.0}
-    , canvas:     canvas
-    , context2D:  ctx
-    , sounds:     sounds
-    , soundEvents: Nil
+    { ship:              newShip (pi/2.0)
+    , keys:              { clockwise: KeyUp
+                         , anticlockwise: KeyUp
+                         , fire: KeyUp }
+    , screenSize:        { w: 0.0, h: 0.0}
+    , canvas:            canvas
+    , context2D:         ctx
+    , sounds:            sounds
+    , soundEvents:       Nil
+    , starCollectionIdx: 0
+    , starCollection:    stars
+    , starField:         take numStars stars
     }
 
 -- UPDATE
@@ -164,9 +187,9 @@ update msg s =
                               _ ->       { b': blasterContinue sh delta
                                          , snds: s.soundEvents }
                       in s1 { ship = sh { blaster = rec.b' }
-                             , soundEvents = rec.snds }
-         in  s2
-        -- catchall
+                            , soundEvents = rec.snds }
+         in  updateStars delta s2
+      -- catch-all
       _ -> s
   where
     modShip s f = s { ship = f s.ship }
@@ -182,7 +205,17 @@ update msg s =
             then Nothing
             else Just { r:   pp.r + blasterVel*delta, ang: pp.ang }
         Nothing -> sh.blaster
+    updateStars delta s = rec.s { starField = rec.newStars }
+      where
+        rec = foldl step { s: s, newStars: []} s.starField
+        step rec star =
+          if star.r > maxStarR
+            then { s:        rec.s { starCollectionIdx = (rec.s.starCollectionIdx + 1) `mod` generatedStars }
+                 , newStars: snoc rec.newStars (fromJust (rec.s.starCollection !! rec.s.starCollectionIdx)) }
+            else { s:        rec.s
+                 , newStars: snoc rec.newStars (star { r = star.r + star.r/maxStarR*delta*star.vel }) }
 
+fromJust (Just x) = x
 
 clamp :: Number -> Number -> Number -> Number
 clamp a x b = min b (max a x)
@@ -242,7 +275,8 @@ mouseMove pos = MouseMove (\sz -> mouseToWorld pos sz )
 --------------------------------------------------------------------------------
 
 render :: forall s e. STRef s State
-       -> Eff (st :: ST s, wau :: WebAudio, canvas :: Canvas| e) Unit
+       -> Eff (st :: ST s, random :: RANDOM
+              , wau :: WebAudio, canvas :: Canvas| e) Unit
 render st = do
   s <- readSTRef st
   let sz = s.screenSize
@@ -253,7 +287,11 @@ render st = do
   setFillStyle "#000000" ctx
   fillPath ctx $ rect ctx { x: 0.0, y: 0.0
                           , w: s.screenSize.w, h: s.screenSize.h }
-  renderShip s "#ffffff"
+  toScreen s $ do
+    renderStars s
+    renderShip s "#ffffff"
+
+
   traverse (playSoundEvent s.sounds) s.soundEvents
   modifySTRef st $ \s -> s { soundEvents = Nil }
   return unit
@@ -263,6 +301,26 @@ playSoundEvent sounds ev =
   case ev of
     FireSound -> playBufferedSound sounds sounds.fireBuffer
 
+
+renderStars :: forall e.
+               State
+            -> Eff (canvas :: Canvas | e) Unit
+renderStars s = do
+  let ctx = s.context2D
+      renderStar star = do
+        save ctx
+        let v = Data.Int.floor (star.r/maxStarR*255.0)
+        setFillStyle (colorStr v v v) ctx
+        fillRect ctx { x: star.r * cos star.ang, y: star.r * sin star.ang
+                     , w: 0.5, h: 0.5 }
+        restore ctx
+        return unit
+
+  traverse renderStar s.starField
+  return unit
+
+colorStr :: Int -> Int -> Int -> String
+colorStr r g b = "rgb("++show r++","++show g++","++show b++")"
 
 --
 -- `toScreen` expects an effect that draws graphics
@@ -287,7 +345,7 @@ toScreen s eff = do
   return unit
 
 renderShip :: forall e. State -> String -> Eff ( canvas :: Canvas | e ) Unit
-renderShip s color = toScreen s $ do
+renderShip s color = do
   let ctx = s.context2D
   save ctx
   let p = shipPos s.ship
@@ -296,24 +354,24 @@ renderShip s color = toScreen s $ do
   setLineWidth 0.2 ctx
   setStrokeStyle color ctx
   beginPath ctx
-  moveTo ctx 0.0    (5.0)
-  lineTo ctx (-3.5) (-5.0)
-  lineTo ctx 0.0    (-4.0)
-  lineTo ctx 3.5    (-5.0)
-  lineTo ctx 0.0    (5.0)
+  moveTo ctx 0.0    (2.0)
+  lineTo ctx (-4.5) (-3.0)
+  lineTo ctx 0.0    (-2.0)
+  lineTo ctx 4.5    (-3.0)
+  lineTo ctx 0.0    (2.0)
   stroke ctx
+  closePath ctx
   restore ctx
   case s.ship.blaster of
     Just pp -> do
       save ctx
-      setFillStyle color ctx
-
+      setFillStyle (colorStr 255 255 255) ctx
       translate { translateX: shipCircleRadius*cos pp.ang
                 , translateY: -shipCircleRadius*sin pp.ang } ctx
       beginPath ctx
       arc ctx { x: -pp.r * cos pp.ang
               , y: pp.r * sin pp.ang
-              , r: 0.75
+              , r: 0.5 + 0.5*(1.0 - pp.r/shipCircleRadius)
               , start: 0.0
               , end: 2.0*pi }
       stroke ctx
@@ -328,8 +386,6 @@ renderShip s color = toScreen s $ do
     lineTo ctx 4.0    (-11.0)
     stroke ctx
     return unit
-
-
   return unit
 
 --------------------------------------------------------------------------
@@ -343,3 +399,12 @@ mouseToWorld pos sz =
       sf = worldWidth/side
    in { x: (sf*(x' - sz.w/2.0)), y: (sf*(y' - sz.h/2.0)) }
 
+randomStars ::  Int -> forall e. Eff (random :: RANDOM | e) (Array Star)
+randomStars n = replicateM n newRandomStar
+
+newRandomStar :: forall e. Eff (random :: RANDOM | e) Star
+newRandomStar = do
+  ang <- randomRange 0.0 (2.0 * pi)
+  r   <- randomRange 0.0 (worldWidth/2.0)
+  vel <- randomRange minStarVel maxStarVel
+  return { r: r, ang: ang, vel: vel }

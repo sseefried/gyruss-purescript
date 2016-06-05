@@ -73,7 +73,8 @@ decodeInto ctx req cont ev = do
       decodeAudioData ctx abd cont traceA
     _ -> traceA "Not an ArrayBufferData"
 
-playBufferedSound :: forall eff. Sounds -> Maybe AudioBuffer -> (Eff (wau :: WebAudio | eff) Unit)
+playBufferedSound :: forall eff. Sounds -> Maybe AudioBuffer
+                  -> (Eff (wau :: WebAudio | eff) Unit)
 
 playBufferedSound sounds (Just buf) = do
   node <- createBufferSource sounds.context
