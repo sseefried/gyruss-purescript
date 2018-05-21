@@ -9,6 +9,7 @@ import Prelude
 import Control.Monad
 import Control.Monad.Eff               (Eff)
 import Control.Monad.Eff.Random
+import Control.Monad.Eff.Console (CONSOLE, log)
 import Control.Monad.Eff.Timer
 import Control.Monad.Except (runExcept)
 import Control.Monad.Except.Trans
@@ -98,7 +99,7 @@ starRadius = 0.25
 --------------------------------------------------------------------------------
 
 main :: forall s e. Eff (random :: RANDOM, st :: ST s{-, wau :: WebAudio-}
-                        , canvas :: CANVAS, dom :: DOM, timer :: TIMER | e) Unit
+                        , console :: CONSOLE, canvas :: CANVAS, dom :: DOM, timer :: TIMER | e) Unit
 main = do
 --  sounds <- makeSounds
 --  state <- defaultState sounds
@@ -275,9 +276,9 @@ sign n = if n < 0.0 then -1.0 else 1.0
 eventListenerFor
   :: forall a s eff.
       STRef s State
-  -> (forall eff'. Event -> Eff (dom :: DOM | eff') a)
+  -> (forall eff'. Event -> Eff (console :: CONSOLE, dom :: DOM | eff') a)
   -> (a -> Msg)
-  -> (Event -> Eff (st :: ST s, dom :: DOM | eff) Unit)
+  -> (Event -> Eff (console :: CONSOLE, st :: ST s, dom :: DOM | eff) Unit)
 eventListenerFor st fromEvent toMsg = \ev -> do
   a <- fromEvent ev
   void $ modifySTRef st $ \s -> update (toMsg a) s
@@ -309,17 +310,17 @@ subscribeTick st = void $ setInterval (Int.floor (1000.0/framesPerSecond)) f
 keydown :: String -> Msg
 keydown code =
   case code of
-     "32" -> Fire KeyDown
-     "37" -> Clockwise KeyDown
-     "39" -> Anticlockwise KeyDown
+     "Space" -> Fire KeyDown
+     "ArrowLeft" -> Clockwise KeyDown
+     "ArrowRight" -> Anticlockwise KeyDown
      _  -> NoOp
 
 keyup :: String -> Msg
 keyup code =
   case code of
-     "32" -> Fire KeyUp
-     "37" -> Clockwise KeyUp
-     "39" -> Anticlockwise KeyUp
+     "Space" -> Fire KeyUp
+     "ArrowLeft" -> Clockwise KeyUp
+     "ArrowRight" -> Anticlockwise KeyUp
      _  -> NoOp
 
 mouseMove :: { x :: Int, y :: Int} -> Msg
@@ -479,11 +480,11 @@ renderEnemy ctx t en = do
   pure unit
 
 
-keyCode :: forall eff. Event -> Eff (dom :: DOM | eff) String
-keyCode ev = pure $
+keyCode :: forall eff. Event -> Eff (dom :: DOM, console :: CONSOLE | eff) String
+keyCode ev =
   case runExcept (eventToKeyboardEvent ev) of
-    Right kev -> code kev
-    Left _    -> "no keycode"
+    Right kev -> pure $ code kev
+    Left _    -> pure "no keycode"
 
 --------------------------------------------------------------------------
 -- UTILITIES
