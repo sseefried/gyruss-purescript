@@ -1,29 +1,47 @@
 module Gyruss.Main where
 
 import Gyruss.Types
-import Gyruss.Sounds
+-- import Gyruss.Sounds
 
 import Prelude
 
-import Audio.WebAudio.Types
+-- import Audio.WebAudio.Types
 import Control.Monad
 import Control.Monad.Eff               (Eff)
 import Control.Monad.Eff.Random
+import Control.Monad.Eff.Timer
+import Control.Monad.Except (runExcept)
+import Control.Monad.Except.Trans
 import Control.Monad.ST
-import Data.Array
 import Data.Foldable
-import Data.List                       (List(..))
+import Data.Foreign
+import Data.Identity
+import Data.Either
+import Data.List.Types as SL
+import Data.List as SL
+import Data.List.Lazy
+import Data.List.Lazy.Types
 import Data.Maybe
 import Data.Traversable
 import Data.Int
+import Data.Int as Int
 import DOM
+import DOM.HTML
+import DOM.HTML.Types
+import DOM.HTML.Window hiding (moveTo)
+import DOM.Event.Types
+import DOM.Event.EventTarget
+import DOM.Event.MouseEvent
+import DOM.Event.KeyboardEvent hiding (KeyLocation(..))
 import Graphics.Canvas
-import Math
-import Data.DOM.Simple.Types
-import Data.DOM.Simple.Window
-import Data.DOM.Simple.Events
+import Math hiding (min, max)
+import Math as Math
+import Partial.Unsafe (unsafePartial)
 
 import Debug.Trace
+
+foreign import windowToEventTarget :: Window -> EventTarget
+
 
 {-
 
@@ -74,45 +92,59 @@ minStarVel = 20.0
 maxStarVel :: Number
 maxStarVel = 100.0
 
+starRadius :: Number
+starRadius = 0.25
+
 --------------------------------------------------------------------------------
 
-main :: forall s e. Eff (random :: RANDOM, st :: ST s, wau :: WebAudio
-                        , canvas :: Canvas, dom :: DOM | e) Unit
+main :: forall s e. Eff (random :: RANDOM, st :: ST s{-, wau :: WebAudio-}
+                        , canvas :: CANVAS, dom :: DOM, timer :: TIMER | e) Unit
 main = do
-  sounds <- makeSounds
-  state <- defaultState sounds
+--  sounds <- makeSounds
+--  state <- defaultState sounds
+  state <- mkDefaultState
+  win <- window
+  let target = windowToEventTarget win
   st <- newSTRef state
   resize st
-  setInterval globalWindow (1000.0/framesPerSecond) $ render st
-  addKeyboardEventListener KeydownEvent
-    (eventListenerFor st keyCode keydown) globalWindow
-  addKeyboardEventListener KeyupEvent
-    (eventListenerFor st keyCode keyup) globalWindow
-  subscribeTick st
-  subscribeMousePos st MouseMoveEvent mouseMove
-  addUIEventListener ResizeEvent
-    (eventListenerFor st (const getScreenSize) Resize) globalWindow
-  startSounds st
-  return unit
+  void $ setInterval (Int.floor (1000.0/framesPerSecond)) $ render st
+  addEventListener (EventType "keydown")
+    -- TODO: refactor
+    (eventListener $ eventListenerFor st keyCode keydown) false target
+  addEventListener (EventType "keyup")
+    (eventListener $ eventListenerFor st keyCode keyup) false target
+  void $ subscribeTick st
+  subscribeMousePos st (EventType "mousemove") mouseMove
+  addEventListener (EventType "resize")
+    (eventListener $ eventListenerFor st (const getScreenSize) Resize) false target
+--  startSounds st
+  pure unit
+
 
 getScreenSize :: forall eff.  Eff (dom :: DOM | eff) Size
 getScreenSize = do
+  globalWindow <- window
   w <- innerWidth globalWindow
   h <- innerHeight globalWindow
-  return $ { w: w, h: h }
+  pure $ { w: toNumber w, h: toNumber h }
 
--- |Handles window resizing by stretching the canvas to fit the
+-- | Handles window resizing by stretching the canvas to fit the
 -- viewport and updating our notion of how large the canvas is.
 resize :: forall s e. STRef s State -> (Eff ( st :: ST s, dom :: DOM
-                                           , canvas :: Canvas | e) Unit)
-resize st = do
+                                           , canvas :: CANVAS | e) Unit)
+resize st = unsafePartial $ do
+  globalWindow <- window
   w     <- innerWidth globalWindow
   h     <- innerHeight globalWindow
-  (Just canvas) <- getCanvasElementById "canvas"
-  setCanvasWidth  w canvas
-  setCanvasHeight h canvas
-  modifySTRef st $ (\s -> s { screenSize = s.screenSize { w = w, h = h } })
-  return unit
+  Just canvas <- getCanvasElementById "canvas"
+  let w' = toNumber w
+      h' = toNumber h
+  void $ setCanvasWidth  w' canvas
+  void $ setCanvasHeight h' canvas
+  void $ modifySTRef st $ (\s -> s { screenSize = s.screenSize { w = w', h = h' } })
+  pure unit
+
+
 
 angleFor :: { x :: Number, y :: Number } -> Number
 angleFor p = atan2 p.y p.x
@@ -125,12 +157,12 @@ shipPos ship = { x:  shipCircleRadius*cos ship.ang
                , y: -shipCircleRadius*sin ship.ang }
 
 
-defaultState :: forall e. Sounds -> Eff (random :: RANDOM, canvas :: Canvas | e) State
-defaultState sounds = do
+mkDefaultState :: forall e. {-Sounds ->-} Eff (random :: RANDOM, canvas :: CANVAS | e) State
+mkDefaultState {-sounds-} = unsafePartial $ do
   Just canvas <- getCanvasElementById "canvas"
   ctx <- getContext2D canvas
   stars <- randomStars generatedStars
-  return $
+  pure $
     { ship:              newShip (pi/2.0)
     , keys:              { clockwise: KeyUp
                          , anticlockwise: KeyUp
@@ -138,12 +170,30 @@ defaultState sounds = do
     , screenSize:        { w: 0.0, h: 0.0}
     , canvas:            canvas
     , context2D:         ctx
-    , sounds:            sounds
-    , soundEvents:       Nil
+--    , sounds:            sounds
+    , soundEvents:       SL.Nil
     , starCollectionIdx: 0
     , starCollection:    stars
     , starField:         take numStars stars
+    , time:              0.0
+    , enemies:           SL.Cons { flightPos: flightPos } SL.Nil
     }
+
+  where
+    flightPos t = { x: distU * cosU angU , y: distU * sinU angU, z: distU }
+      where
+         angU = (fmod t 6.0)/6.0
+         distU = shipCircleRadius*0.7*(0.5+(sinU (0.3*t)/2.0))
+
+
+sinU :: Number -> Number
+sinU x = sin (2.0*pi*x)
+
+cosU :: Number -> Number
+cosU x = cos (2.0*pi*x)
+
+fmod :: Number -> Number -> Number
+fmod x y = x - Math.floor (x/y)
 
 -- UPDATE
 
@@ -183,12 +233,12 @@ update msg s =
                           rec =
                             case b of
                               Nothing -> { b': Just { r: 0.0, ang: sh.ang }
-                                         , snds: Cons FireSound s.soundEvents }
+                                         , snds: SL.Cons FireSound s.soundEvents }
                               _ ->       { b': blasterContinue sh delta
                                          , snds: s.soundEvents }
                       in s1 { ship = sh { blaster = rec.b' }
                             , soundEvents = rec.snds }
-         in  updateStars delta s2
+         in  updateTime delta (updateStars delta s2)
       -- catch-all
       _ -> s
   where
@@ -205,20 +255,16 @@ update msg s =
             then Nothing
             else Just { r:   pp.r + blasterVel*delta, ang: pp.ang }
         Nothing -> sh.blaster
+    updateTime delta s = s { time = s.time + delta }
     updateStars delta s = rec.s { starField = rec.newStars }
       where
-        rec = foldl step { s: s, newStars: []} s.starField
+        rec = foldl step { s: s, newStars: nil} s.starField
         step rec star =
           if star.r > maxStarR
             then { s:        rec.s { starCollectionIdx = (rec.s.starCollectionIdx + 1) `mod` generatedStars }
-                 , newStars: snoc rec.newStars (fromJust (rec.s.starCollection !! rec.s.starCollectionIdx)) }
+                 , newStars: snoc rec.newStars (unsafePartial (fromJust (rec.s.starCollection !! rec.s.starCollectionIdx))) }
             else { s:        rec.s
                  , newStars: snoc rec.newStars (star { r = star.r + star.r/maxStarR*delta*star.vel }) }
-
-fromJust (Just x) = x
-
-clamp :: Number -> Number -> Number -> Number
-clamp a x b = min b (max a x)
 
 sign :: Number -> Number
 sign n = if n < 0.0 then -1.0 else 1.0
@@ -229,44 +275,51 @@ sign n = if n < 0.0 then -1.0 else 1.0
 eventListenerFor
   :: forall a s eff.
       STRef s State
-  -> (forall eff'. DOMEvent -> Eff (dom :: DOM | eff') a)
+  -> (forall eff'. Event -> Eff (dom :: DOM | eff') a)
   -> (a -> Msg)
-  -> (DOMEvent -> Eff (st :: ST s, dom :: DOM | eff) Unit)
+  -> (Event -> Eff (st :: ST s, dom :: DOM | eff) Unit)
 eventListenerFor st fromEvent toMsg = \ev -> do
   a <- fromEvent ev
-  modifySTRef st $ \s -> update (toMsg a) s
-  return unit
+  void $ modifySTRef st $ \s -> update (toMsg a) s
+  pure unit
 
+subscribeMousePos
+  :: forall s eff. STRef s State -> EventType -> ({x :: Int, y :: Int} -> Msg)
+  -> Eff (st :: ST s, dom :: DOM | eff) Unit
 subscribeMousePos st evType toMsg = do
-  addMouseEventListener evType g globalWindow
+  win <- window
+  addEventListener evType (eventListener g) false (windowToEventTarget win)
   where
+--    g :: forall s eff. Event -> Eff (st :: ST s, dom :: DOM | eff) Unit
     g ev = do
-      x <- clientX (ev :: DOMEvent)
-      y <- clientY ev
-      modifySTRef st $ \s -> update (toMsg { x: x, y: y }) s
-      return unit
+      case runExcept (eventToMouseEvent ev) of
+        Right mev -> do
+          let x = clientX mev
+              y = clientY mev
+          void $ modifySTRef st $ \s -> update (toMsg { x: x, y: y }) s
+          pure unit
+        Left _ -> pure unit
 
-subscribeTick st = do
-  setInterval globalWindow (1000.0/framesPerSecond) f
+subscribeTick :: forall s eff. STRef s State -> Eff (st :: ST s, timer :: TIMER | eff) Unit
+subscribeTick st = void $ setInterval (Int.floor (1000.0/framesPerSecond)) f
   where
-    f = do
-      modifySTRef st $ \s -> update (Tick (1.0/framesPerSecond)) s
-      return unit
+    f = void $ modifySTRef st $ \s -> update (Tick (1.0/framesPerSecond)) s
 
-keydown :: Int -> Msg
+
+keydown :: String -> Msg
 keydown code =
   case code of
-     32 -> Fire KeyDown
-     37 -> Clockwise KeyDown
-     39 -> Anticlockwise KeyDown
+     "32" -> Fire KeyDown
+     "37" -> Clockwise KeyDown
+     "39" -> Anticlockwise KeyDown
      _  -> NoOp
 
-keyup :: Int -> Msg
+keyup :: String -> Msg
 keyup code =
   case code of
-     32 -> Fire KeyUp
-     37 -> Clockwise KeyUp
-     39 -> Anticlockwise KeyUp
+     "32" -> Fire KeyUp
+     "37" -> Clockwise KeyUp
+     "39" -> Anticlockwise KeyUp
      _  -> NoOp
 
 mouseMove :: { x :: Int, y :: Int} -> Msg
@@ -276,51 +329,68 @@ mouseMove pos = MouseMove (\sz -> mouseToWorld pos sz )
 
 render :: forall s e. STRef s State
        -> Eff (st :: ST s, random :: RANDOM
-              , wau :: WebAudio, canvas :: Canvas| e) Unit
+              {-, wau :: WebAudio-}, canvas :: CANVAS| e) Unit
 render st = do
   s <- readSTRef st
   let sz = s.screenSize
   -- FIXME: setting the canvas size every time is just dumb!
-  setCanvasWidth  sz.w s.canvas
-  setCanvasHeight sz.h s.canvas
+  void $ setCanvasWidth  sz.w s.canvas
+  void $ setCanvasHeight sz.h s.canvas
   let ctx = s.context2D
-  setFillStyle "#000000" ctx
-  fillPath ctx $ rect ctx { x: 0.0, y: 0.0
+  void $ setFillStyle "#000000" ctx
+  void $ fillPath ctx $ rect ctx { x: 0.0, y: 0.0
                           , w: s.screenSize.w, h: s.screenSize.h }
   toScreen s $ do
     renderStars s
     renderShip s "#ffffff"
+    traverse_ (renderEnemy s.context2D s.time) s.enemies
 
+--  traverse (playSoundEvent s.sounds) s.soundEvents
+  void $ modifySTRef st $ \s -> s { soundEvents = SL.Nil }
+  pure unit
 
-  traverse (playSoundEvent s.sounds) s.soundEvents
-  modifySTRef st $ \s -> s { soundEvents = Nil }
-  return unit
-
-playSoundEvent :: forall e. Sounds -> SoundEvent -> Eff (wau :: WebAudio | e) Unit
-playSoundEvent sounds ev =
-  case ev of
-    FireSound -> playBufferedSound sounds sounds.fireBuffer
+-- playSoundEvent :: forall e. Sounds -> SoundEvent -> Eff (wau :: WebAudio | e) Unit
+-- playSoundEvent sounds ev =
+--   case ev of
+--     FireSound -> playBufferedSound sounds sounds.fireBuffer
 
 
 renderStars :: forall e.
                State
-            -> Eff (canvas :: Canvas | e) Unit
+            -> Eff (canvas :: CANVAS | e) Unit
 renderStars s = do
   let ctx = s.context2D
       renderStar star = do
-        save ctx
-        let v = Data.Int.floor (star.r/maxStarR*255.0)
-        setFillStyle (colorStr v v v) ctx
-        fillRect ctx { x: star.r * cos star.ang, y: star.r * sin star.ang
-                     , w: 0.5, h: 0.5 }
-        restore ctx
-        return unit
+        void $ save ctx
+        let v = Int.floor (star.r/maxStarR*255.0)
+        void $ setFillStyle (colorStr v v v) ctx
+        void $ fillCircle ctx { x: star.r * cos star.ang
+                       , y: star.r * sin star.ang
+                       , r: starRadius }
+        void $ restore ctx
+        pure unit
 
-  traverse renderStar s.starField
-  return unit
+  void $ traverse renderStar s.starField
+  pure unit
+
+fillCircle :: forall e. Context2D
+           -> { x :: Number, y :: Number, r :: Number }
+           -> Eff (canvas :: CANVAS | e) Unit
+fillCircle ctx o = fillPath ctx $ circlePath ctx o
+
+
+circlePath :: forall e. Context2D ->  { x :: Number, y :: Number, r :: Number }
+           -> Eff (canvas :: CANVAS | e) Unit
+circlePath ctx o = do
+  void $ arc ctx { x: o.x
+          , y: o.y
+          , r: o.r
+          , start: 0.0
+          , end: 2.0*pi }
+  pure unit
 
 colorStr :: Int -> Int -> Int -> String
-colorStr r g b = "rgb("++show r++","++show g++","++show b++")"
+colorStr r g b = "rgb("<>show r<>","<>show g<>","<>show b<>")"
 
 --
 -- `toScreen` expects an effect that draws graphics
@@ -331,62 +401,89 @@ colorStr r g b = "rgb("++show r++","++show g++","++show b++")"
 toScreen ::
   forall e.
      State
-  -> Eff (canvas :: Canvas | e) Unit
-  -> Eff (canvas :: Canvas | e) Unit
+  -> Eff (canvas :: CANVAS | e) Unit
+  -> Eff (canvas :: CANVAS | e) Unit
 toScreen s eff = do
   let ctx = s.context2D
       side = min s.screenSize.w s.screenSize.h
   let sf = side/worldWidth
-  save ctx
-  translate { translateX: s.screenSize.w/2.0, translateY: s.screenSize.h/2.0 } ctx
-  scale { scaleX: sf, scaleY: -sf } ctx
+  _ <- save ctx
+  _ <- translate { translateX: s.screenSize.w/2.0, translateY: s.screenSize.h/2.0 } ctx
+  _ <- scale { scaleX: sf, scaleY: -sf } ctx
   eff
-  restore ctx
-  return unit
+  _ <- restore ctx
+  pure unit
 
-renderShip :: forall e. State -> String -> Eff ( canvas :: Canvas | e ) Unit
+renderShip :: forall e. State -> String -> Eff ( canvas :: CANVAS | e ) Unit
 renderShip s color = do
   let ctx = s.context2D
-  save ctx
+  void $ save ctx
   let p = shipPos s.ship
-  translate { translateX: p.x, translateY: p.y } ctx
-  rotate (pi/2.0 - s.ship.ang) ctx
-  setLineWidth 0.2 ctx
-  setStrokeStyle color ctx
-  beginPath ctx
-  moveTo ctx 0.0    (2.0)
-  lineTo ctx (-4.5) (-3.0)
-  lineTo ctx 0.0    (-2.0)
-  lineTo ctx 4.5    (-3.0)
-  lineTo ctx 0.0    (2.0)
-  stroke ctx
-  closePath ctx
-  restore ctx
+  void $ translate { translateX: p.x, translateY: p.y } ctx
+  void $ rotate (pi/2.0 - s.ship.ang) ctx
+  void $ setLineWidth 0.2 ctx
+  void $ setStrokeStyle color ctx
+  void $ beginPath ctx
+  void $ moveTo ctx 0.0    (2.0)
+  void $ lineTo ctx (-4.5) (-3.0)
+  void $ lineTo ctx 0.0    (-2.0)
+  void $ lineTo ctx 4.5    (-3.0)
+  void $ lineTo ctx 0.0    (2.0)
+  void $ stroke ctx
+  void $ closePath ctx
+  void $ restore ctx
   case s.ship.blaster of
     Just pp -> do
-      save ctx
-      setFillStyle (colorStr 255 255 255) ctx
-      translate { translateX: shipCircleRadius*cos pp.ang
+      void $ save ctx
+      void $ setFillStyle (colorStr 255 255 255) ctx
+      void $ translate { translateX: shipCircleRadius*cos pp.ang
                 , translateY: -shipCircleRadius*sin pp.ang } ctx
-      beginPath ctx
-      arc ctx { x: -pp.r * cos pp.ang
+      void $ beginPath ctx
+      void $ circlePath ctx
+              { x: -pp.r * cos pp.ang
               , y: pp.r * sin pp.ang
-              , r: 0.5 + 0.5*(1.0 - pp.r/shipCircleRadius)
-              , start: 0.0
-              , end: 2.0*pi }
-      stroke ctx
-      fill ctx
-      restore ctx
-      return unit
-    Nothing -> return unit
+              , r: 0.5 + 0.5*(1.0 - pp.r/shipCircleRadius) }
+      void $ stroke ctx
+      void $ fill ctx
+      void $ restore ctx
+      pure unit
+    Nothing -> pure unit
 
   when false $ do
-    moveTo ctx (-4.0) (-11.0)
-    lineTo ctx 0.0    (-15.0)
-    lineTo ctx 4.0    (-11.0)
-    stroke ctx
-    return unit
-  return unit
+    void $ moveTo ctx (-4.0) (-11.0)
+    void $ lineTo ctx 0.0    (-15.0)
+    void $ lineTo ctx 4.0    (-11.0)
+    void $ stroke ctx
+    pure unit
+  pure unit
+
+renderEnemy :: forall e. Context2D -> Time -> Enemy
+            -> Eff ( canvas :: CANVAS | e ) Unit
+renderEnemy ctx t en = do
+  void $ save ctx
+  let p = en.flightPos t
+  void $ translate { translateX: p.x, translateY: p.y} ctx
+--  let sf = 1.0 - (p.z/shipCircleRadius)
+  let sf = 0.3
+  void $  scale { scaleX: sf, scaleY: sf } ctx
+  void $ setLineWidth 0.2 ctx
+  void $ setStrokeStyle "rgb(255,255,255)" ctx
+  void $ setLineWidth 0.2 ctx
+  void $ beginPath ctx
+  void $ moveTo ctx 0.0    (2.0)
+  void $ lineTo ctx (-4.5) (-3.0)
+  void $ lineTo ctx 4.5    (-3.0)
+  void $ lineTo ctx 0.0    (2.0)
+  void $ stroke ctx
+  void $ restore ctx
+  pure unit
+
+
+keyCode :: forall eff. Event -> Eff (dom :: DOM | eff) String
+keyCode ev = pure $
+  case runExcept (eventToKeyboardEvent ev) of
+    Right kev -> code kev
+    Left _    -> "no keycode"
 
 --------------------------------------------------------------------------
 -- UTILITIES
@@ -399,7 +496,7 @@ mouseToWorld pos sz =
       sf = worldWidth/side
    in { x: (sf*(x' - sz.w/2.0)), y: (sf*(y' - sz.h/2.0)) }
 
-randomStars ::  Int -> forall e. Eff (random :: RANDOM | e) (Array Star)
+randomStars ::  Int -> forall e. Eff (random :: RANDOM | e) (List Star)
 randomStars n = replicateM n newRandomStar
 
 newRandomStar :: forall e. Eff (random :: RANDOM | e) Star
@@ -407,4 +504,4 @@ newRandomStar = do
   ang <- randomRange 0.0 (2.0 * pi)
   r   <- randomRange 0.0 (worldWidth/2.0)
   vel <- randomRange minStarVel maxStarVel
-  return { r: r, ang: ang, vel: vel }
+  pure { r: r, ang: ang, vel: vel }

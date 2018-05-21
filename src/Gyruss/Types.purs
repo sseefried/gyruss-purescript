@@ -1,11 +1,12 @@
 module Gyruss.Types where
 
 
-import Audio.WebAudio.Types
+-- import Audio.WebAudio.Types
 import Control.Monad.Eff
 import Control.Monad.Eff.Random
 import Data.Maybe (Maybe)
 import Data.List
+import Data.List.Lazy as LL
 import Data.Tuple
 import Graphics.Canvas
 
@@ -16,6 +17,8 @@ type Size = { w :: Number
             , h :: Number }
 
 type Pos = { x :: Number, y :: Number }
+
+type Pos3 = { x :: Number, y :: Number, z :: Number }
 
 type Polar = { r :: Number
               , ang :: Number }
@@ -58,15 +61,29 @@ type State =
   , keys               :: KeyStates
   , ship               :: Ship
   , screenSize         :: Size
-  , sounds             :: Sounds
+--  , sounds             :: Sounds
   , soundEvents        :: List SoundEvent
   , starCollectionIdx  :: Int
-  , starCollection     :: Array Star
-  , starField          :: Array Star
+  , starCollection     :: LL.List Star
+  , starField          :: LL.List Star
+  , time               :: Time -- cumulative time
+  , enemies            :: List Enemy
   }
 
-type Sounds = {
-      context         :: AudioContext
-    , musicBuffer     :: Maybe AudioBuffer
-    , fireBuffer      :: Maybe AudioBuffer
-    }
+-- type Sounds = {
+--      context         :: AudioContext
+--    , musicBuffer     :: Maybe AudioBuffer
+--    , fireBuffer      :: Maybe AudioBuffer
+--    }
+
+type Time = Number
+
+{-
+Ships have a flight path that start at a particular time and then
+end. Once they reach the end of their flight path they enter a
+holding pattern.
+-}
+type Enemy =
+  { flightPos :: Time -> Pos3 }
+
+
