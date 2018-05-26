@@ -1,45 +1,41 @@
 module Gyruss.Main where
 
-import Gyruss.Types
--- import Gyruss.Sounds
-
-import Prelude
-
--- import Audio.WebAudio.Types
 import Control.Monad
-import Control.Monad.Eff               (Eff)
 import Control.Monad.Eff.Random
-import Control.Monad.Eff.Console (CONSOLE, log)
 import Control.Monad.Eff.Timer
-import Control.Monad.Except (runExcept)
 import Control.Monad.Except.Trans
 import Control.Monad.ST
-import Data.Foldable
-import Data.Foreign
-import Data.Identity
-import Data.Either
-import Data.List.Types as SL
-import Data.List as SL
-import Data.List.Lazy
-import Data.List.Lazy.Types
-import Data.Maybe
-import Data.Traversable
-import Data.Int
-import Data.Int as Int
 import DOM
+import DOM.Event.EventTarget
+import DOM.Event.KeyboardEvent hiding (KeyLocation(..))
+import DOM.Event.MouseEvent
+import DOM.Event.Types
 import DOM.HTML
 import DOM.HTML.Types
 import DOM.HTML.Window hiding (moveTo)
-import DOM.Event.Types
-import DOM.Event.EventTarget
-import DOM.Event.MouseEvent
-import DOM.Event.KeyboardEvent hiding (KeyLocation(..))
+import Data.Either
+import Data.Foldable
+import Data.Foreign
+import Data.Identity
+import Data.Int
+import Data.List
+import Data.List.Types
+import Data.Maybe
+import Data.Traversable
+import Debug.Trace
 import Graphics.Canvas
-import Math hiding (min, max)
+import Gyruss.Types
+import Math hiding (min,max)
+import Prelude
+
+import Control.Monad.Eff (Eff)
+import Control.Monad.Eff.Console (CONSOLE, log)
+import Control.Monad.Except (runExcept)
+import Data.Int as Int
+import Data.List.Lazy as LL
+import Data.List.Lazy.Types as LL
 import Math as Math
 import Partial.Unsafe (unsafePartial)
-
-import Debug.Trace
 
 foreign import windowToEventTarget :: Window -> EventTarget
 
@@ -172,17 +168,18 @@ mkDefaultState {-sounds-} = unsafePartial $ do
     , canvas:            canvas
     , context2D:         ctx
 --    , sounds:            sounds
-    , soundEvents:       SL.Nil
+    , soundEvents:       Nil
     , starCollectionIdx: 0
     , starCollection:    stars
-    , starField:         take numStars stars
+    , starField:         LL.take numStars stars
     , time:              0.0
-    , enemies:           SL.Cons { flightPos: flightPos } SL.Nil
+    , enemies:           Cons { enemyId: 1, flightPos: flightPos } Nil
     }
 
   where
     flightPos t = { x: distU * cosU angU , y: distU * sinU angU, z: distU }
       where
+         -- Enemy just moves in a pattern dependent on time
          angU = (fmod t 6.0)/6.0
          distU = shipCircleRadius*0.7*(0.5+(sinU (0.3*t)/2.0))
 
@@ -224,7 +221,7 @@ update msg s =
                           absV  = abs sh.angVel - shipDrag
                           angVel' = if absV > 0.0 then absV * sign sh.angVel else 0.0
                       in modShip s $ \sh -> sh { ang = ang', angVel = angVel' }
-             s2 =
+             (s2 :: State) =
                let sh = s1.ship
                in case s1.keys.fire of
                     KeyUp ->
@@ -234,12 +231,23 @@ update msg s =
                           rec =
                             case b of
                               Nothing -> { b': Just { r: 0.0, ang: sh.ang }
-                                         , snds: SL.Cons FireSound s.soundEvents }
+                                         , snds: Cons FireSound s.soundEvents }
                               _ ->       { b': blasterContinue sh delta
                                          , snds: s.soundEvents }
                       in s1 { ship = sh { blaster = rec.b' }
                             , soundEvents = rec.snds }
-         in  updateTime delta (updateStars delta s2)
+
+             (s3 :: State) =
+               let sh = s2.ship
+               in case sh.blaster of
+                    Just pp ->
+                      let noCollision e =
+                            not (posIsectPos3 (polarToPos (actualBlasterPos pp))
+                                              (e.flightPos s2.time) 1.0)
+                          (enemies':: List Enemy) = filter noCollision s2.enemies
+                      in s2 { enemies = enemies' }
+                    Nothing -> s2
+         in  updateTime delta (updateStars delta s3)
       -- catch-all
       _ -> s
   where
@@ -259,13 +267,15 @@ update msg s =
     updateTime delta s = s { time = s.time + delta }
     updateStars delta s = rec.s { starField = rec.newStars }
       where
-        rec = foldl step { s: s, newStars: nil} s.starField
+        rec = foldl step { s: s, newStars: LL.nil} s.starField
+        step :: { s :: State, newStars :: LL.List Star } -> Star
+             -> { s :: State, newStars :: LL.List Star }
         step rec star =
           if star.r > maxStarR
             then { s:        rec.s { starCollectionIdx = (rec.s.starCollectionIdx + 1) `mod` generatedStars }
-                 , newStars: snoc rec.newStars (unsafePartial (fromJust (rec.s.starCollection !! rec.s.starCollectionIdx))) }
+                 , newStars: LL.snoc rec.newStars (unsafePartial (fromJust (rec.s.starCollection LL.!! rec.s.starCollectionIdx))) }
             else { s:        rec.s
-                 , newStars: snoc rec.newStars (star { r = star.r + star.r/maxStarR*delta*star.vel }) }
+                 , newStars: LL.snoc rec.newStars (star { r = star.r + star.r/maxStarR*delta*star.vel }) }
 
 sign :: Number -> Number
 sign n = if n < 0.0 then -1.0 else 1.0
@@ -347,7 +357,7 @@ render st = do
     traverse_ (renderEnemy s.context2D s.time) s.enemies
 
 --  traverse (playSoundEvent s.sounds) s.soundEvents
-  void $ modifySTRef st $ \s -> s { soundEvents = SL.Nil }
+  void $ modifySTRef st $ \s -> s { soundEvents = Nil }
   pure unit
 
 -- playSoundEvent :: forall e. Sounds -> SoundEvent -> Eff (wau :: WebAudio | e) Unit
@@ -438,12 +448,13 @@ renderShip s color = do
       void $ save ctx
       void $ setFillStyle (colorStr 255 255 255) ctx
       void $ translate { translateX: shipCircleRadius*cos pp.ang
-                , translateY: -shipCircleRadius*sin pp.ang } ctx
+                       , translateY: -shipCircleRadius*sin pp.ang } ctx
       void $ beginPath ctx
       void $ circlePath ctx
               { x: -pp.r * cos pp.ang
               , y: pp.r * sin pp.ang
-              , r: 0.5 + 0.5*(1.0 - pp.r/shipCircleRadius) }
+              , r: 0.5 + 0.5*(1.0 - pp.r/shipCircleRadius)
+              }
       void $ stroke ctx
       void $ fill ctx
       void $ restore ctx
@@ -457,6 +468,20 @@ renderShip s color = do
     void $ stroke ctx
     pure unit
   pure unit
+
+polarToPos :: Polar -> Pos
+polarToPos pp = { x: pp.r * cos pp.ang, y: pp.r * sin pp.ang }
+
+
+actualBlasterPos :: Polar -> Polar
+actualBlasterPos pp = { r: shipCircleRadius - pp.r, ang: pp.ang }
+
+--
+-- Checks whether Pos intersects with Pos3 within a certain radius
+--
+posIsectPos3 :: Pos -> Pos3 -> Number -> Boolean
+posIsectPos3 p p3 r =
+  Math.pow (p.x - p3.x) 2.0 +  Math.pow (p.y - p3.y) 2.0 < Math.pow r 2.0
 
 renderEnemy :: forall e. Context2D -> Time -> Enemy
             -> Eff ( canvas :: CANVAS | e ) Unit
@@ -497,8 +522,8 @@ mouseToWorld pos sz =
       sf = worldWidth/side
    in { x: (sf*(x' - sz.w/2.0)), y: (sf*(y' - sz.h/2.0)) }
 
-randomStars ::  Int -> forall e. Eff (random :: RANDOM | e) (List Star)
-randomStars n = replicateM n newRandomStar
+randomStars ::  Int -> forall e. Eff (random :: RANDOM | e) (LL.List Star)
+randomStars n = LL.replicateM n newRandomStar
 
 newRandomStar :: forall e. Eff (random :: RANDOM | e) Star
 newRandomStar = do

@@ -21,7 +21,7 @@ type Pos = { x :: Number, y :: Number }
 type Pos3 = { x :: Number, y :: Number, z :: Number }
 
 type Polar = { r :: Number
-              , ang :: Number }
+             , ang :: Number }
 
 type Star =
   { r   :: Number
@@ -84,6 +84,4 @@ end. Once they reach the end of their flight path they enter a
 holding pattern.
 -}
 type Enemy =
-  { flightPos :: Time -> Pos3 }
-
-
+  { enemyId :: Int, flightPos :: Time -> Pos3 }
