@@ -53,6 +53,9 @@ Principles of input handling:
 worldWidth :: Number
 worldWidth = 100.0
 
+worldDepth :: Number
+worldDepth = 200.0
+
 maxStarR :: Number
 maxStarR = worldWidth
 
@@ -63,16 +66,16 @@ angUnit :: Number
 angUnit = pi/1000.0
 
 shipDrag :: Number
-shipDrag = pi/400.0
+shipDrag = 0.005
 
 shipAccel :: Number
-shipAccel = 5.0*angUnit
+shipAccel = 3.0*angUnit
 
 shipMaxVel :: Number
-shipMaxVel = 30.0*angUnit
+shipMaxVel = 20.0*angUnit
 
 blasterVel :: Number
-blasterVel = 200.0
+blasterVel = 100.0
 
 framesPerSecond :: Number
 framesPerSecond = 60.0
@@ -91,6 +94,9 @@ maxStarVel = 100.0
 
 starRadius :: Number
 starRadius = 0.25
+
+enemyRadius :: Number
+enemyRadius = 4.0
 
 --------------------------------------------------------------------------------
 
@@ -134,8 +140,8 @@ resize st = unsafePartial $ do
   w     <- innerWidth globalWindow
   h     <- innerHeight globalWindow
   Just canvas <- getCanvasElementById "canvas"
-  let w' = toNumber w
-      h' = toNumber h
+  let w' = toNumber w*0.99
+      h' = toNumber h*0.99
   void $ setCanvasWidth  w' canvas
   void $ setCanvasHeight h' canvas
   void $ modifySTRef st $ (\s -> s { screenSize = s.screenSize { w = w', h = h' } })
@@ -151,7 +157,7 @@ newShip ang  = { ang: ang, angVel: 0.0, blaster: Nothing }
 
 shipPos :: Ship -> Pos
 shipPos ship = { x:  shipCircleRadius*cos ship.ang
-               , y: -shipCircleRadius*sin ship.ang }
+               , y:  shipCircleRadius*sin ship.ang }
 
 
 mkDefaultState :: forall e. {-Sounds ->-} Eff (random :: RANDOM, canvas :: CANVAS | e) State
@@ -160,7 +166,7 @@ mkDefaultState {-sounds-} = unsafePartial $ do
   ctx <- getContext2D canvas
   stars <- randomStars generatedStars
   pure $
-    { ship:              newShip (pi/2.0)
+    { ship:              newShip (-pi/2.0)
     , keys:              { clockwise: KeyUp
                          , anticlockwise: KeyUp
                          , fire: KeyUp }
@@ -173,15 +179,18 @@ mkDefaultState {-sounds-} = unsafePartial $ do
     , starCollection:    stars
     , starField:         LL.take numStars stars
     , time:              0.0
-    , enemies:           Cons { enemyId: 1, flightPos: flightPos } Nil
+    , enemies:           map toEnemy (0.4 : 0.8 : 1.2: 1.6 : Nil)
     }
 
   where
-    flightPos t = { x: distU * cosU angU , y: distU * sinU angU, z: distU }
+    toEnemy delta = { enemyId: 1, flightPos: flightPosFun delta }
+    flightPosFun delta t = { x: distU * cosU (angU delta)
+                           , y: distU * sinU (angU delta)
+                           , z: -worldDepth/4.0 }
       where
          -- Enemy just moves in a pattern dependent on time
-         angU = (fmod t 6.0)/6.0
-         distU = shipCircleRadius*0.7*(0.5+(sinU (0.3*t)/2.0))
+         angU delta = (fmod (t+delta) 6.0)/6.0
+         distU = shipCircleRadius * 0.3
 
 
 sinU :: Number -> Number
@@ -191,7 +200,7 @@ cosU :: Number -> Number
 cosU x = cos (2.0*pi*x)
 
 fmod :: Number -> Number -> Number
-fmod x y = x - Math.floor (x/y)
+fmod x y = x - Math.floor (x/y)*y
 
 -- UPDATE
 
@@ -204,23 +213,25 @@ update msg s =
       Anticlockwise  ks -> modKeys $ \k -> k { anticlockwise = ks}
       Fire ks -> modKeys $ \k -> k { fire = ks }
       Tick delta ->
+         -- update movement
          let s1 =
                let sh = s.ship
                in case s.keys of
                     { clockwise: KeyDown } ->
-                      let angVel' = min (sh.angVel + shipAccel) shipMaxVel
-                      in  modShip s $ \sh -> sh { ang    = sh.ang + angVel'
-                                              , angVel = angVel' }
-                    { anticlockwise: KeyDown } ->
                       let angVel' = max (sh.angVel - shipAccel) (-shipMaxVel)
-                      in  modShip s $ \sh -> sh { ang    = sh.ang + angVel'
-                                              , angVel = angVel' }
+                      in  modShip s $ \sh -> sh { ang  = sh.ang + angVel'
+                                                , angVel = angVel' }
+                    { anticlockwise: KeyDown } ->
+                      let angVel' = min (sh.angVel + shipAccel) (shipMaxVel)
+                      in  modShip s $ \sh -> sh { ang  = sh.ang + angVel'
+                                                , angVel = angVel' }
 
                     _ ->
                       let ang' = sh.ang + sh.angVel
                           absV  = abs sh.angVel - shipDrag
                           angVel' = if absV > 0.0 then absV * sign sh.angVel else 0.0
                       in modShip s $ \sh -> sh { ang = ang', angVel = angVel' }
+             -- update the blaster
              (s2 :: State) =
                let sh = s1.ship
                in case s1.keys.fire of
@@ -236,14 +247,15 @@ update msg s =
                                          , snds: s.soundEvents }
                       in s1 { ship = sh { blaster = rec.b' }
                             , soundEvents = rec.snds }
-
+             -- check for collisions with enemies
              (s3 :: State) =
                let sh = s2.ship
                in case sh.blaster of
                     Just pp ->
                       let noCollision e =
                             not (posIsectPos3 (polarToPos (actualBlasterPos pp))
-                                              (e.flightPos s2.time) 1.0)
+                                              (blasterRadius pp)
+                                              (e.flightPos s2.time) 2.0)
                           (enemies':: List Enemy) = filter noCollision s2.enemies
                       in s2 { enemies = enemies' }
                     Nothing -> s2
@@ -431,7 +443,7 @@ renderShip s color = do
   void $ save ctx
   let p = shipPos s.ship
   void $ translate { translateX: p.x, translateY: p.y } ctx
-  void $ rotate (pi/2.0 - s.ship.ang) ctx
+  void $ rotate (pi/2.0 + s.ship.ang) ctx
   void $ setLineWidth 0.2 ctx
   void $ setStrokeStyle color ctx
   void $ beginPath ctx
@@ -448,12 +460,12 @@ renderShip s color = do
       void $ save ctx
       void $ setFillStyle (colorStr 255 255 255) ctx
       void $ translate { translateX: shipCircleRadius*cos pp.ang
-                       , translateY: -shipCircleRadius*sin pp.ang } ctx
+                       , translateY: shipCircleRadius*sin pp.ang } ctx
       void $ beginPath ctx
       void $ circlePath ctx
               { x: -pp.r * cos pp.ang
-              , y: pp.r * sin pp.ang
-              , r: 0.5 + 0.5*(1.0 - pp.r/shipCircleRadius)
+              , y: -pp.r * sin pp.ang
+              , r: blasterRadius pp
               }
       void $ stroke ctx
       void $ fill ctx
@@ -472,16 +484,25 @@ renderShip s color = do
 polarToPos :: Polar -> Pos
 polarToPos pp = { x: pp.r * cos pp.ang, y: pp.r * sin pp.ang }
 
-
 actualBlasterPos :: Polar -> Polar
-actualBlasterPos pp = { r: shipCircleRadius - pp.r, ang: pp.ang }
+actualBlasterPos pp = { r: shipCircleRadius - pp.r , ang: pp.ang }
+
+--
+-- Given the position of the blaster (relative to ship) returns the
+-- radius of the blaster ball
+--
+blasterRadius :: Polar -> Number
+blasterRadius pp = 0.5 + 0.5*(1.0 - pp.r/shipCircleRadius)
 
 --
 -- Checks whether Pos intersects with Pos3 within a certain radius
 --
-posIsectPos3 :: Pos -> Pos3 -> Number -> Boolean
-posIsectPos3 p p3 r =
-  Math.pow (p.x - p3.x) 2.0 +  Math.pow (p.y - p3.y) 2.0 < Math.pow r 2.0
+posIsectPos3 :: Pos -> Number -> Pos3 -> Number -> Boolean
+posIsectPos3 p r p3 r' =
+  let dx = p.x - p3.x
+      dy = p.y - p3.y
+      d  = r + r'
+  in dx*dx + dy*dy < d*d
 
 renderEnemy :: forall e. Context2D -> Time -> Enemy
             -> Eff ( canvas :: CANVAS | e ) Unit
@@ -496,10 +517,11 @@ renderEnemy ctx t en = do
   void $ setStrokeStyle "rgb(255,255,255)" ctx
   void $ setLineWidth 0.2 ctx
   void $ beginPath ctx
-  void $ moveTo ctx 0.0    (2.0)
-  void $ lineTo ctx (-4.5) (-3.0)
-  void $ lineTo ctx 4.5    (-3.0)
-  void $ lineTo ctx 0.0    (2.0)
+  void $ circlePath ctx
+          { x: p.x
+          , y: p.y
+          , r: enemyRadius
+          }
   void $ stroke ctx
   void $ restore ctx
   pure unit
