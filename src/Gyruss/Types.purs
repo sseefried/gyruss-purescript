@@ -43,7 +43,7 @@ shipMaxVel :: Number
 shipMaxVel = 20.0*angUnit
 
 blasterVel :: Number
-blasterVel = 200.0
+blasterVel = 100.0
 
 framesPerSecond :: Number
 framesPerSecond = 60.0
@@ -65,6 +65,15 @@ starRadius = 0.25
 
 enemyRadius :: Number
 enemyRadius = 3.0
+
+maxBlasterBalls :: Int
+maxBlasterBalls = 3
+
+--
+-- The distance a blaster ball must travel before you can fire another
+--
+blasterRechargeDistance :: Number
+blasterRechargeDistance = 10.0
 
 -- strictly these should be Ints but it's more convenient for them
 -- to be Number`s
@@ -105,9 +114,9 @@ data SoundEvent
   = FireSound
 
 type Ship =
-  { ang     :: Number
-  , angVel  :: Number
-  , blaster :: Maybe Polar -- Nothing means it hasn't been fired
+  { ang      :: Number
+  , angVel   :: Number
+  , blasters :: List Polar -- empty means it hasn't been fired
   }
 
 type State =

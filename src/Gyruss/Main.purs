@@ -1,9 +1,5 @@
 module Gyruss.Main where
 
-import Gyruss.Types
-import Gyruss.Render
-import Gyruss.Util
-
 import Control.Monad
 import Control.Monad.Eff.Random
 import Control.Monad.Eff.Timer
@@ -26,6 +22,11 @@ import Data.List
 import Data.List.Types
 import Data.Maybe
 import Data.Traversable
+import Data.Tuple
+import Debug.Trace
+import Gyruss.Render
+import Gyruss.Types
+import Gyruss.Util
 import Math hiding (min,max)
 import Prelude
 
@@ -38,8 +39,6 @@ import Data.List.Lazy as LL
 import Data.List.Lazy.Types as LL
 import Math as Math
 import Partial.Unsafe (unsafePartial)
-
-import Debug.Trace
 
 
 
@@ -107,9 +106,7 @@ angleFor :: { x :: Number, y :: Number } -> Number
 angleFor p = atan2 p.y p.x
 
 newShip :: Number -> Ship
-newShip ang  = { ang: ang, angVel: 0.0, blaster: Nothing }
-
-
+newShip ang = { ang: ang, angVel: 0.0, blasters: Nil }
 
 mkDefaultState :: forall e. {-Sounds ->-} Eff (random :: RANDOM, canvas :: CANVAS | e) State
 mkDefaultState {-sounds-} = unsafePartial $ do
@@ -166,77 +163,99 @@ update msg s =
       Anticlockwise  ks -> modKeys $ \k -> k { anticlockwise = ks}
       Fire ks -> modKeys $ \k -> k { fire = ks }
       Tick delta ->
-         -- update movement
-         let s1 =
-               let sh = s.ship
-               in case s.keys of
+        -- update movement
+        let s1 =
+              let sh = s.ship
+              in  case s.keys of
                     { clockwise: KeyDown } ->
                       let angVel' = max (sh.angVel - shipAccel) (-shipMaxVel)
                       in  modShip s $ \sh -> sh { ang  = sh.ang + angVel'
-                                                , angVel = angVel' }
+                                               , angVel = angVel' }
                     { anticlockwise: KeyDown } ->
                       let angVel' = min (sh.angVel + shipAccel) (shipMaxVel)
                       in  modShip s $ \sh -> sh { ang  = sh.ang + angVel'
-                                                , angVel = angVel' }
-
+                                               , angVel = angVel' }
                     _ ->
                       let ang' = sh.ang + sh.angVel
                           absV  = abs sh.angVel - shipDrag
                           angVel' = if absV > 0.0 then absV * sign sh.angVel else 0.0
-                      in modShip s $ \sh -> sh { ang = ang', angVel = angVel' }
-             -- update the blaster
-             (s2 :: State) =
-               let sh = s1.ship
-               in case s1.keys.fire of
+                      in  modShip s $ \sh -> sh { ang = ang', angVel = angVel' }
+             -- update the blasters
+            (s2 :: State) =
+              let sh = s1.ship
+              in  case s1.keys.fire of
                     KeyUp ->
-                      modShip s1 $ \sh -> sh { blaster = blasterContinue sh delta }
+                      modShip s1 $ \sh ->
+                        sh { blasters = blastersContinue sh.blasters delta }
                     KeyDown ->
-                      let b = sh.blaster
-                          rec =
-                            case b of
-                              Nothing -> { b': Just { r: 0.0, ang: sh.ang }
-                                         , snds: Cons FireSound s.soundEvents }
-                              _ ->       { b': blasterContinue sh delta
-                                         , snds: s.soundEvents }
-                      in s1 { ship = sh { blaster = rec.b' }
-                            , soundEvents = rec.snds }
-             -- check for collisions with enemies
-             (s3 :: State) =
+                      let rec =
+                            if (L.length sh.blasters < maxBlasterBalls &&
+                                blasterFarEnough sh.blasters)
+                              then { bs:   { r: 0.0, ang: sh.ang } : sh.blasters
+                                   , snds: FireSound : s1.soundEvents
+                                   }
+                              else { bs:   blastersContinue sh.blasters delta,
+                                     snds: s1.soundEvents }
+                      in s1 { ship = sh { blasters = rec.bs }
+                            , soundEvents = rec.snds
+                            }
+            -- check for collisions with enemies
+            (s3 :: State) =
                let sh = s2.ship
-               in case sh.blaster of
-                    Just pp ->
-                      let noCollision e =
-                            let shipP   = polarToPos (actualBlasterPos pp)
-                                enemyP3 = e.flightPos s2.time
-                            in not $ posIsectPos3
-                                       shipP (blasterRadius pp)
-                                       enemyP3 (scaleFactor enemyP3* enemyRadius)
-                          (enemies':: List Enemy) = filter noCollision s2.enemies
-                      in s2 { enemies = enemies' }
-                    Nothing -> s2
-             -- TODO: This is quite inefficient
-             (s4 :: State) =
-               let sh = s3.ship
-               in if L.length s2.enemies > L.length s3.enemies
-                    then s3 { ship = sh { blaster = Nothing }}
-                    else s3
-         in  updateTime delta (updateStars delta s4)
+                   res = filterOnCollision s2.time { es: s2.enemies, ps: sh.blasters }
+               in  s2 { enemies = res.es, ship = sh { blasters = res.ps }}
+        in  updateTime delta $ updateStars delta s3
       -- catch-all
       _ -> s
   where
+    -- Returns 'Just es' on a collision where 'es' is the remaining enemies
+    -- Returns 'Nothing' on no collisions
+    collish :: Time -> List Enemy -> Polar -> Maybe (List Enemy)
+    collish _ Nil _ = Nothing
+    collish t (e:es) p =
+      let shipP   = polarToPos (actualBlasterPos p)
+          enemyP3 = e.flightPos t
+      in if posIsectPos3
+              shipP (blasterRadius p)
+              enemyP3 (scaleFactor enemyP3* enemyRadius)
+         then Just es -- collision. Remove the enemy
+         else (Cons e) <$> (collish t es p)
+    --
+    -- Filters enemies and blasters out on any collision.
+    -- Stops at the first collision
+    --
+    filterOnCollision :: Time
+                      -> { es :: List Enemy, ps :: List Polar }
+                      -> { es :: List Enemy, ps :: List Polar }
+    filterOnCollision _ rec@{ es: es, ps: Nil } = rec
+    filterOnCollision t { es: es, ps: p:ps} =
+      case collish t es p of
+        Just es' -> { es: es', ps: ps } -- collision. stop
+        Nothing -> addPoint p (filterOnCollision t { es: es, ps: ps })
+      where
+        addPoint p rec = rec { ps = p:rec.ps}
+
     modShip s f = s { ship = f s.ship }
     modShipVel s f =
       modShip s $ \sh ->
         let angVel' = clamp (-shipMaxVel) (f sh.angVel) shipMaxVel
         in  sh { angVel = angVel' }
     modKeys f = s { keys = f s.keys }
-    blasterContinue sh delta =
-      case sh.blaster of
-        Just pp ->
+    blastersContinue :: List Polar -> Number -> List Polar
+    blastersContinue balls delta = catMaybes $ map updateBlasterBall balls
+      where
+        updateBlasterBall pp =
           if pp.r > shipCircleRadius
             then Nothing
-            else Just { r:   pp.r + blasterVel*delta, ang: pp.ang }
-        Nothing -> sh.blaster
+            else Just { r: pp.r + blasterVel*delta, ang: pp.ang }
+    -- checks if the closest blaster ball (if any) is far enough away
+    blasterFarEnough :: List Polar -> Boolean
+    blasterFarEnough balls =
+      case balls of
+        Nil   -> true
+        (b:_) -> b.r > blasterRechargeDistance
+
+
     updateTime delta s = s { time = s.time + delta }
     updateStars delta s = rec.s { starField = rec.newStars }
       where

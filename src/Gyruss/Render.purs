@@ -9,7 +9,6 @@ import Gyruss.Util
 
 import Prelude
 
-
 import Control.Monad.Eff (Eff)
 import Control.Monad.Eff.Random
 import Control.Monad.ST
@@ -69,24 +68,26 @@ renderStars s = do
 
 renderShip :: forall e. State -> String -> Eff ( canvas :: CANVAS | e ) Unit
 renderShip s color = do
-  let ctx = s.context2D
-  void $ save ctx
-  let p = shipPos s.ship
-  void $ translate { translateX: p.x, translateY: p.y } ctx
-  void $ rotate (pi/2.0 + s.ship.ang) ctx
-  void $ setLineWidth 0.2 ctx
-  void $ setStrokeStyle color ctx
-  void $ beginPath ctx
-  void $ moveTo ctx 0.0    (2.0)
-  void $ lineTo ctx (-4.5) (-3.0)
-  void $ lineTo ctx 0.0    (-2.0)
-  void $ lineTo ctx 4.5    (-3.0)
-  void $ lineTo ctx 0.0    (2.0)
-  void $ stroke ctx
-  void $ closePath ctx
-  void $ restore ctx
-  case s.ship.blaster of
-    Just pp -> do
+    let ctx = s.context2D
+    void $ save ctx
+    let p = shipPos s.ship
+    void $ translate { translateX: p.x, translateY: p.y } ctx
+    void $ rotate (pi/2.0 + s.ship.ang) ctx
+    void $ setLineWidth 0.2 ctx
+    void $ setStrokeStyle color ctx
+    void $ beginPath ctx
+    void $ moveTo ctx 0.0    (2.0)
+    void $ lineTo ctx (-4.5) (-3.0)
+    void $ lineTo ctx 0.0    (-2.0)
+    void $ lineTo ctx 4.5    (-3.0)
+    void $ lineTo ctx 0.0    (2.0)
+    void $ stroke ctx
+    void $ closePath ctx
+    void $ restore ctx
+    traverse_ (renderBlasterBall ctx) s.ship.blasters
+    pure unit
+  where
+    renderBlasterBall ctx pp = do
       void $ save ctx
       void $ setFillStyle (colorStr 255 255 255) ctx
       void $ translate { translateX: shipCircleRadius*cos pp.ang
@@ -101,15 +102,9 @@ renderShip s color = do
       void $ fill ctx
       void $ restore ctx
       pure unit
-    Nothing -> pure unit
 
-  when false $ do
-    void $ moveTo ctx (-4.0) (-11.0)
-    void $ lineTo ctx 0.0    (-15.0)
-    void $ lineTo ctx 4.0    (-11.0)
-    void $ stroke ctx
-    pure unit
-  pure unit
+
+
 
 renderEnemy :: forall e. Context2D -> Time -> Enemy
             -> Eff ( canvas :: CANVAS | e ) Unit
