@@ -1,0 +1,1 @@
+pulp --watch build -m Gyruss.Main --to html/gyruss.js
