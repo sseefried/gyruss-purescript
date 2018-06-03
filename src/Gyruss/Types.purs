@@ -1,5 +1,6 @@
 module Gyruss.Types where
 
+import Prelude
 
 -- import Audio.WebAudio.Types
 import Control.Monad.Eff
@@ -9,7 +10,61 @@ import Data.List
 import Data.List.Lazy as LL
 import Data.Tuple
 import Graphics.Canvas
+import Math (pi)
 
+
+-- For 3D projection purposes screenDist is the
+-- distance from the eye of the player to the screen
+screenDist :: Number
+screenDist = 200.0
+
+worldWidth :: Number
+worldWidth = 100.0
+
+worldDepth :: Number
+worldDepth = 800.0
+
+maxStarR :: Number
+maxStarR = worldWidth
+
+shipCircleRadius :: Number
+shipCircleRadius = 40.0
+
+angUnit :: Number
+angUnit = pi/1000.0
+
+shipDrag :: Number
+shipDrag = 0.005
+
+shipAccel :: Number
+shipAccel = 3.0*angUnit
+
+shipMaxVel :: Number
+shipMaxVel = 20.0*angUnit
+
+blasterVel :: Number
+blasterVel = 200.0
+
+framesPerSecond :: Number
+framesPerSecond = 60.0
+
+numStars :: Int
+numStars = 70
+
+generatedStars :: Int
+generatedStars = 1000
+
+minStarVel :: Number
+minStarVel = 20.0
+
+maxStarVel :: Number
+maxStarVel = 100.0
+
+starRadius :: Number
+starRadius = 0.25
+
+enemyRadius :: Number
+enemyRadius = 3.0
 
 -- strictly these should be Ints but it's more convenient for them
 -- to be Number`s
