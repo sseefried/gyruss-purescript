@@ -32,6 +32,7 @@ import Control.Monad.Eff (Eff)
 import Control.Monad.Eff.Console (CONSOLE, log)
 import Control.Monad.Except (runExcept)
 import Data.Int as Int
+import Data.List as L
 import Data.List.Lazy as LL
 import Data.List.Lazy.Types as LL
 import Math as Math
@@ -50,11 +51,16 @@ Principles of input handling:
 -}
 
 
+-- For 3D projection purposes screenDist is the
+-- distance from the eye of the player to the screen
+screenDist :: Number
+screenDist = 200.0
+
 worldWidth :: Number
 worldWidth = 100.0
 
 worldDepth :: Number
-worldDepth = 200.0
+worldDepth = 800.0
 
 maxStarR :: Number
 maxStarR = worldWidth
@@ -75,7 +81,7 @@ shipMaxVel :: Number
 shipMaxVel = 20.0*angUnit
 
 blasterVel :: Number
-blasterVel = 100.0
+blasterVel = 200.0
 
 framesPerSecond :: Number
 framesPerSecond = 60.0
@@ -96,7 +102,7 @@ starRadius :: Number
 starRadius = 0.25
 
 enemyRadius :: Number
-enemyRadius = 4.0
+enemyRadius = 3.0
 
 --------------------------------------------------------------------------------
 
@@ -184,9 +190,11 @@ mkDefaultState {-sounds-} = unsafePartial $ do
 
   where
     toEnemy delta = { enemyId: 1, flightPos: flightPosFun delta }
+    maxDist = -worldDepth
     flightPosFun delta t = { x: distU * cosU (angU delta)
                            , y: distU * sinU (angU delta)
-                           , z: -worldDepth/4.0 }
+                           , z: maxDist/2.0 + maxDist/2.0 * sinU (0.1*t)
+                           }
       where
          -- Enemy just moves in a pattern dependent on time
          angU delta = (fmod (t+delta) 6.0)/6.0
@@ -253,13 +261,21 @@ update msg s =
                in case sh.blaster of
                     Just pp ->
                       let noCollision e =
-                            not (posIsectPos3 (polarToPos (actualBlasterPos pp))
-                                              (blasterRadius pp)
-                                              (e.flightPos s2.time) 2.0)
+                            let shipP   = polarToPos (actualBlasterPos pp)
+                                enemyP3 = e.flightPos s2.time
+                            in not $ posIsectPos3
+                                       shipP (blasterRadius pp)
+                                       enemyP3 (scaleFactor enemyP3* enemyRadius)
                           (enemies':: List Enemy) = filter noCollision s2.enemies
                       in s2 { enemies = enemies' }
                     Nothing -> s2
-         in  updateTime delta (updateStars delta s3)
+             -- TODO: This is quite inefficient
+             (s4 :: State) =
+               let sh = s3.ship
+               in if L.length s2.enemies > L.length s3.enemies
+                    then s3 { ship = sh { blaster = Nothing }}
+                    else s3
+         in  updateTime delta (updateStars delta s4)
       -- catch-all
       _ -> s
   where
@@ -405,7 +421,8 @@ fillCircle ctx o = fillPath ctx $ circlePath ctx o
 circlePath :: forall e. Context2D ->  { x :: Number, y :: Number, r :: Number }
            -> Eff (canvas :: CANVAS | e) Unit
 circlePath ctx o = do
-  void $ arc ctx { x: o.x
+  void $ arc ctx
+          { x: o.x
           , y: o.y
           , r: o.r
           , start: 0.0
@@ -509,22 +526,26 @@ renderEnemy :: forall e. Context2D -> Time -> Enemy
 renderEnemy ctx t en = do
   void $ save ctx
   let p = en.flightPos t
-  void $ translate { translateX: p.x, translateY: p.y} ctx
---  let sf = 1.0 - (p.z/shipCircleRadius)
-  let sf = 0.3
-  void $  scale { scaleX: sf, scaleY: sf } ctx
   void $ setLineWidth 0.2 ctx
   void $ setStrokeStyle "rgb(255,255,255)" ctx
   void $ setLineWidth 0.2 ctx
   void $ beginPath ctx
+  let f = scaleFactor p
   void $ circlePath ctx
           { x: p.x
           , y: p.y
-          , r: enemyRadius
+          , r: f*enemyRadius
           }
   void $ stroke ctx
   void $ restore ctx
   pure unit
+
+--
+-- How much to scale the x,y co-ordinates of an object that is a certain
+-- distance away in the z axis.
+--
+scaleFactor :: Pos3 -> Number
+scaleFactor p3 = screenDist / (screenDist - p3.z)
 
 
 keyCode :: forall eff. Event -> Eff (dom :: DOM, console :: CONSOLE | eff) String
