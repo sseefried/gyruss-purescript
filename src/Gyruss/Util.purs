@@ -4,6 +4,9 @@ import Prelude
 
 import Gyruss.Types
 
+import Data.List
+import Data.Maybe
+import Data.Tuple
 import Math
 
 
@@ -41,3 +44,5 @@ posIsectPos3 p r p3 r' =
       dy = p.y - p3.y
       d  = r + r'
   in dx*dx + dy*dy < d*d
+
+

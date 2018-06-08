@@ -127,20 +127,26 @@ mkDefaultState {-sounds-} = unsafePartial $ do
     , starCollection:    stars
     , starField:         LL.take numStars stars
     , time:              0.0
-    , enemies:           map toEnemy (0.4 : 0.8 : 1.2: 1.6 : Nil)
+    , enemies:           map toEnemy deltas
     }
 
   where
+    deltas :: List Number
+    deltas = 0.1 : 0.2 : 0.3 : 0.4 : 0.5 : 0.6 : 0.7 : 0.8 : 0.9 : 1.0 : Nil
     toEnemy delta = { enemyId: 1, flightPos: flightPosFun delta }
     maxDist = -worldDepth
-    flightPosFun delta t = { x: distU * cosU (angU delta)
-                           , y: distU * sinU (angU delta)
-                           , z: maxDist/2.0 + maxDist/2.0 * sinU (0.1*t)
+    flightPosFun delta t = { x: xPos delta
+                           , y: yPos delta
+                           , z: 0.0
                            }
       where
          -- Enemy just moves in a pattern dependent on time
-         angU delta = (fmod (t+delta) 6.0)/6.0
-         distU = shipCircleRadius * 0.3
+         speedFactor = 4.0
+         moderator  = 10.0
+         xPos delta = let t' = (speedFactor * (t + delta))/moderator
+                      in 0.7*shipCircleRadius * (cos t' + 0.5 * cos (10.0*t'))
+         yPos delta = let t' = (speedFactor * (t + delta))/moderator
+                      in 0.7*shipCircleRadius * (-(sin t') - 0.5 * sin (3.0*t'))
 
 
 sinU :: Number -> Number
