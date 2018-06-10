@@ -1,44 +1,49 @@
 module Gyruss.Main where
 
-import Control.Monad
-import Control.Monad.Eff.Random
-import Control.Monad.Eff.Timer
-import Control.Monad.Except.Trans
-import Control.Monad.ST
-import DOM
-import DOM.Event.EventTarget
-import DOM.Event.KeyboardEvent hiding (KeyLocation(..))
-import DOM.Event.MouseEvent
-import DOM.Event.Types
-import DOM.HTML
-import DOM.HTML.Types
-import DOM.HTML.Window hiding (moveTo)
-import Data.Either
-import Data.Foldable
-import Data.Foreign
-import Data.Identity
-import Data.Int
-import Data.List
-import Data.List.Types
-import Data.Map (toUnfoldable, fromFoldable)
-import Data.Maybe
-import Data.Traversable
-import Data.Tuple
-import Debug.Trace
-import Gyruss.Render
-import Gyruss.Types
-import Gyruss.Util
-import Math hiding (min,max)
-import Prelude
+import Gyruss.Render (CANVAS, getCanvasElementById, getContext2D, render, setCanvasHeight, setCanvasWidth)
+import Gyruss.Types (Enemy, EnemySort(..), EnemyWave, EnemyWaveId
+                    , KeyState(..), Msg(..), Polar, Pos, Ship, Size
+                    , SoundEvent(..), Star, State, Time
+                    , blasterRechargeDistance, blasterVel
+                    , enemyRadius, framesPerSecond, generatedStars
+                    , maxBlasterBalls, maxStarR, maxStarVel, minStarVel
+                    , numStars, shipAccel, shipCircleRadius, shipDrag
+                    , shipMaxVel, worldDepth, worldWidth)
+import Gyruss.Util (actualBlasterPos, blasterRadius, polarToPos,
+                    posIsectPos3, scaleFactor)
 
+
+import Control.Monad.Eff.Random (RANDOM, randomRange)
+import Control.Monad.Eff.Timer (TIMER, setInterval)
+import Control.Monad.ST (ST, STRef, modifySTRef, newSTRef)
 import Control.Monad.Eff (Eff)
-import Control.Monad.Eff.Console (CONSOLE, log)
+import Control.Monad.Eff.Console (CONSOLE)
 import Control.Monad.Except (runExcept)
+import DOM (DOM)
+import DOM.Event.EventTarget (addEventListener, eventListener)
+import DOM.Event.KeyboardEvent (code, eventToKeyboardEvent)
+import DOM.Event.MouseEvent (clientX, clientY, eventToMouseEvent)
+import DOM.Event.Types (Event, EventType(..))
+import DOM.HTML (window)
+import DOM.HTML.Types (windowToEventTarget)
+import DOM.HTML.Window (innerHeight, innerWidth)
+import Data.Either (Either(..))
+import Data.Int (toNumber)
+import Data.List (catMaybes)
+import Data.List.Types (List(..), (:))
+import Data.Map (toUnfoldable, fromFoldable)
+import Data.Maybe (Maybe(..), fromJust)
+import Data.Traversable (foldl)
+import Data.Tuple (Tuple(..))
 import Data.Int as Int
 import Data.List as L
-import Data.List.Lazy as LL
-import Data.List.Lazy.Types as LL
-import Math as Math
+import Data.List.Lazy (replicateM, snoc, take, (!!)) as LL
+import Data.List.Lazy.Types (List, nil) as LL
+import Math hiding (min, max)
+import Math (floor) as Math
+import Prelude (Unit, bind, clamp, const, discard, map, max, min, mod, negate,
+                pure, unit, void, ($), (&&), (*), (+), (-), (/), (<), (<$>),
+                (>), (>=))
 import Partial.Unsafe (unsafePartial)
 
 
@@ -157,10 +162,10 @@ mkDefaultState {-sounds-} = unsafePartial $ do
          -- Enemy just moves in a pattern dependent on time
          speedFactor = 4.0
          moderator  = 10.0
-         xPos delta = let t' = (speedFactor * (t + delta))/moderator
-                      in 0.7*shipCircleRadius * (cos t' + 0.5 * cos (10.0*t'))
-         yPos delta = let t' = (speedFactor * (t + delta))/moderator
-                      in 0.7*shipCircleRadius * (-(sin t') - 0.5 * sin (3.0*t'))
+         xPos delta' = let t' = (speedFactor * (t + delta'))/moderator
+                       in 0.7*shipCircleRadius * (cos t' + 0.5 * cos (10.0*t'))
+         yPos delta' = let t' = (speedFactor * (t + delta'))/moderator
+                       in 0.7*shipCircleRadius * (-(sin t') - 0.5 * sin (3.0*t'))
 
 
 sinU :: Number -> Number
@@ -189,17 +194,17 @@ update msg s =
               in  case s.keys of
                     { clockwise: KeyDown } ->
                       let angVel' = max (sh.angVel - shipAccel) (-shipMaxVel)
-                      in  modShip s $ \sh -> sh { ang  = sh.ang + angVel'
-                                               , angVel = angVel' }
+                      in  modShip s $ \sh' -> sh' { ang  = sh'.ang + angVel'
+                                                  , angVel = angVel' }
                     { anticlockwise: KeyDown } ->
                       let angVel' = min (sh.angVel + shipAccel) (shipMaxVel)
-                      in  modShip s $ \sh -> sh { ang  = sh.ang + angVel'
-                                               , angVel = angVel' }
+                      in  modShip s $ \sh' -> sh' { ang  = sh'.ang + angVel'
+                                                  , angVel = angVel' }
                     _ ->
                       let ang' = sh.ang + sh.angVel
                           absV  = abs sh.angVel - shipDrag
                           angVel' = if absV > 0.0 then absV * sign sh.angVel else 0.0
-                      in  modShip s $ \sh -> sh { ang = ang', angVel = angVel' }
+                      in  modShip s $ \sh' -> sh' { ang = ang', angVel = angVel' }
              -- update the blasters
             (s2 :: State) =
               let sh = s1.ship
@@ -302,12 +307,12 @@ update msg s =
         rec = foldl step { s: s, newStars: LL.nil} s.starField
         step :: { s :: State, newStars :: LL.List Star } -> Star
              -> { s :: State, newStars :: LL.List Star }
-        step rec star =
+        step rec' star =
           if star.r > maxStarR
-            then { s:        rec.s { starCollectionIdx = (rec.s.starCollectionIdx + 1) `mod` generatedStars }
-                 , newStars: LL.snoc rec.newStars (unsafePartial (fromJust (rec.s.starCollection LL.!! rec.s.starCollectionIdx))) }
-            else { s:        rec.s
-                 , newStars: LL.snoc rec.newStars (star { r = star.r + star.r/maxStarR*delta*star.vel }) }
+            then { s:        rec'.s { starCollectionIdx = (rec'.s.starCollectionIdx + 1) `mod` generatedStars }
+                 , newStars: LL.snoc rec'.newStars (unsafePartial (fromJust (rec'.s.starCollection LL.!! rec'.s.starCollectionIdx))) }
+            else { s:        rec'.s
+                 , newStars: LL.snoc rec'.newStars (star { r = star.r + star.r/maxStarR*delta*star.vel }) }
 
 sign :: Number -> Number
 sign n = if n < 0.0 then -1.0 else 1.0
