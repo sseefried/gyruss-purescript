@@ -14,11 +14,14 @@ import Control.Monad.Eff.Random
 import Control.Monad.ST
 import Data.Traversable (traverse_, traverse)
 import Data.List
+import Data.Map (values)
 import Data.Maybe
+import Data.Tuple
 import Data.Int as Int
 import Graphics.Canvas
 import Math hiding (min, max)
 
+import Debug.Trace
 
 render :: forall s e. STRef s State
        -> Eff (st :: ST s, random :: RANDOM
@@ -36,7 +39,12 @@ render st = do
   toScreen s $ do
     renderStars s
     renderShip s "#ffffff"
-    traverse_ (renderEnemy s.context2D s.time) s.enemies
+    -- FIXME: Refactor
+    traverse_ (renderEnemy s.context2D) $
+      concatMap (\w -> if s.time >= w.arriveTime
+                 then map (\e -> Tuple (s.time - w.arriveTime) e) w.enemies
+                 else Nil)
+        (values s.enemyWaves)
 
 --  traverse (playSoundEvent s.sounds) s.soundEvents
   void $ modifySTRef st $ \s -> s { soundEvents = Nil }
@@ -106,11 +114,11 @@ renderShip s color = do
 
 
 
-renderEnemy :: forall e. Context2D -> Time -> Enemy
+renderEnemy :: forall e. Context2D -> Tuple Time Enemy
             -> Eff ( canvas :: CANVAS | e ) Unit
-renderEnemy ctx t en = do
+renderEnemy ctx (Tuple t en) = do
   void $ save ctx
-  let p = en.flightPos t
+  let p = en.pos t
   void $ setLineWidth 0.2 ctx
   void $ setStrokeStyle "rgb(255,255,255)" ctx
   void $ setLineWidth 0.2 ctx

@@ -20,6 +20,7 @@ import Data.Identity
 import Data.Int
 import Data.List
 import Data.List.Types
+import Data.Map (toUnfoldable, fromFoldable)
 import Data.Maybe
 import Data.Traversable
 import Data.Tuple
@@ -127,13 +128,26 @@ mkDefaultState {-sounds-} = unsafePartial $ do
     , starCollection:    stars
     , starField:         LL.take numStars stars
     , time:              0.0
-    , enemies:           map toEnemy deltas
+    , enemyWaves:        fromFoldable $
+                             mkWave 1 1.0
+                           : mkWave 2 5.0
+                           : mkWave 3 10.0
+                           : mkWave 4 15.0
+                           : Nil
+
     }
 
   where
+    mkWave waveId arriveTime =
+      Tuple waveId { arriveTime: arriveTime
+                   , sort: Normal
+                   , enemies: map toEnemy deltas
+                   }
+
+
     deltas :: List Number
     deltas = 0.1 : 0.2 : 0.3 : 0.4 : 0.5 : 0.6 : 0.7 : 0.8 : 0.9 : 1.0 : Nil
-    toEnemy delta = { enemyId: 1, flightPos: flightPosFun delta }
+    toEnemy delta = { pos: flightPosFun delta }
     maxDist = -worldDepth
     flightPosFun delta t = { x: xPos delta
                            , y: yPos delta
@@ -208,8 +222,11 @@ update msg s =
             -- check for collisions with enemies
             (s3 :: State) =
                let sh = s2.ship
-                   res = filterOnCollision s2.time { es: s2.enemies, ps: sh.blasters }
-               in  s2 { enemies = res.es, ship = sh { blasters = res.ps }}
+                   res = filterWave s2.time
+                            { ws: toUnfoldable s2.enemyWaves
+                            , ps: sh.blasters }
+               in  s2 { enemyWaves = fromFoldable res.ws
+                      , ship = sh { blasters = res.ps }}
         in  updateTime delta $ updateStars delta s3
       -- catch-all
       _ -> s
@@ -220,12 +237,29 @@ update msg s =
     collish _ Nil _ = Nothing
     collish t (e:es) p =
       let shipP   = polarToPos (actualBlasterPos p)
-          enemyP3 = e.flightPos t
+          enemyP3 = e.pos t
       in if posIsectPos3
               shipP (blasterRadius p)
               enemyP3 (scaleFactor enemyP3* enemyRadius)
          then Just es -- collision. Remove the enemy
          else (Cons e) <$> (collish t es p)
+
+
+    filterWave :: Time
+        -> { ws :: List (Tuple EnemyWaveId EnemyWave), ps :: List Polar }
+        -> { ws :: List (Tuple EnemyWaveId EnemyWave), ps :: List Polar }
+    filterWave t { ws: Nil, ps: ps } = { ws: Nil, ps: ps }
+    filterWave t { ws: (Cons (Tuple eid wave) waves), ps: ps } =
+      let { es: es', ps: ps' } =
+            if t >= wave.arriveTime
+              then filterOnCollision (t - wave.arriveTime)
+                     { es: wave.enemies, ps: ps }
+              else { es: wave.enemies, ps: ps }
+      in  add (Tuple eid (wave { enemies = es' })) $
+            filterWave t { ws: waves, ps: ps' }
+      where
+        add w { ws: ws, ps: ps } = { ws: w:ws, ps: ps }
+
     --
     -- Filters enemies and blasters out on any collision.
     -- Stops at the first collision

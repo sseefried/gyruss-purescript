@@ -8,6 +8,7 @@ import Control.Monad.Eff.Random
 import Data.Maybe (Maybe)
 import Data.List
 import Data.List.Lazy as LL
+import Data.Map
 import Data.Tuple
 import Graphics.Canvas
 import Math (pi)
@@ -131,8 +132,22 @@ type State =
   , starCollection     :: LL.List Star
   , starField          :: LL.List Star
   , time               :: Time -- cumulative time
-  , enemies            :: List Enemy
+  , enemyWaves         :: Map EnemyWaveId EnemyWave
   }
+
+data EnemySort = Normal
+
+type EnemyWaveId = Int
+
+--
+-- An EnemyWave
+--
+type EnemyWave =
+  { arriveTime    :: Time
+  , sort          :: EnemySort
+  , enemies       :: List Enemy
+  }
+
 
 -- type Sounds = {
 --      context         :: AudioContext
@@ -147,5 +162,4 @@ Ships have a flight path that start at a particular time and then
 end. Once they reach the end of their flight path they enter a
 holding pattern.
 -}
-type Enemy =
-  { enemyId :: Int, flightPos :: Time -> Pos3 }
+type Enemy = { pos :: Time -> Pos3 }
