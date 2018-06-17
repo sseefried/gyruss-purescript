@@ -1,24 +1,13 @@
 module Gyruss.Main where
 
-import Gyruss.Render (CANVAS, getCanvasElementById, getContext2D, render, setCanvasHeight, setCanvasWidth)
-import Gyruss.Types (Enemy, EnemySort(..), EnemyWave, EnemyWaveId
-                    , KeyState(..), Msg(..), Polar, Pos, Ship, Size
-                    , SoundEvent(..), Star, State, Time
-                    , blasterRechargeDistance, blasterVel
-                    , enemyRadius, framesPerSecond, generatedStars
-                    , maxBlasterBalls, maxStarR, maxStarVel, minStarVel
-                    , numStars, shipAccel, shipCircleRadius, shipDrag
-                    , shipMaxVel, worldDepth, worldWidth)
-import Gyruss.Util (actualBlasterPos, blasterRadius, polarToPos,
-                    posIsectPos3, scaleFactor)
+import Math hiding (min,max)
 
-
-import Control.Monad.Eff.Random (RANDOM, randomRange)
-import Control.Monad.Eff.Timer (TIMER, setInterval)
-import Control.Monad.ST (ST, STRef, modifySTRef, newSTRef)
 import Control.Monad.Eff (Eff)
 import Control.Monad.Eff.Console (CONSOLE)
+import Control.Monad.Eff.Random (RANDOM, randomRange)
+import Control.Monad.Eff.Timer (TIMER, setInterval)
 import Control.Monad.Except (runExcept)
+import Control.Monad.ST (ST, STRef, modifySTRef, newSTRef)
 import DOM (DOM)
 import DOM.Event.EventTarget (addEventListener, eventListener)
 import DOM.Event.KeyboardEvent (code, eventToKeyboardEvent)
@@ -27,26 +16,33 @@ import DOM.Event.Types (Event, EventType(..))
 import DOM.HTML (window)
 import DOM.HTML.Types (windowToEventTarget)
 import DOM.HTML.Window (innerHeight, innerWidth)
+import Data.Array (length)
 import Data.Either (Either(..))
 import Data.Int (toNumber)
+import Data.Int as Int
 import Data.List (catMaybes)
+import Data.List as L
+import Data.List.Lazy (replicateM, snoc, take, (!!)) as LL
+import Data.List.Lazy.Types (List, nil) as LL
 import Data.List.Types (List(..), (:))
 import Data.Map (toUnfoldable, fromFoldable)
 import Data.Maybe (Maybe(..), fromJust)
 import Data.Traversable (foldl)
 import Data.Tuple (Tuple(..))
-import Data.Int as Int
-import Data.List as L
-import Data.List.Lazy (replicateM, snoc, take, (!!)) as LL
-import Data.List.Lazy.Types (List, nil) as LL
-import Math hiding (min, max)
+import Gyruss.Render (CANVAS, getCanvasElementById, getContext2D, render
+                     , setCanvasHeight, setCanvasWidth)
+import Gyruss.Types (Enemy, EnemySort(..), EnemyWave, EnemyWaveId, KeyState(..)
+                    , Msg(..), Polar, Pos, Ship, Size, SoundEvent(..), Star
+                    , State, Time, blasterRechargeDistance, blasterVel
+                    , enemyRadius, framesPerSecond, generatedStars
+                    , maxBlasterBalls, maxStarR, maxStarVel, minStarVel
+                    , numStars, shipAccel, shipCircleRadius, shipDrag
+                    , shipMaxVel, worldDepth, worldWidth)
+import Gyruss.Util (actualBlasterPos, blasterRadius, polarToPos, posIsectPos3
+                   , scaleFactor, enemyPos, (!!!))
 import Math (floor) as Math
-import Prelude (Unit, bind, clamp, const, discard, map, max, min, mod, negate,
-                pure, unit, void, ($), (&&), (*), (+), (-), (/), (<), (<$>),
-                (>), (>=))
 import Partial.Unsafe (unsafePartial)
-
-
+import Prelude (Unit, bind, clamp, const, discard, map, max, min, mod, negate, pure, unit, void, ($), (&&), (*), (+), (-), (/), (<), (<$>), (>), (>=), (==))
 
 {-
 
@@ -134,10 +130,10 @@ mkDefaultState {-sounds-} = unsafePartial $ do
     , starField:         LL.take numStars stars
     , time:              0.0
     , enemyWaves:        fromFoldable $
-                             mkWave 1 1.0
-                           : mkWave 2 5.0
-                           : mkWave 3 10.0
-                           : mkWave 4 15.0
+                             mkWave 1 0.0
+                           : mkWave 2 8.5
+                           : mkWave 3 16.0
+                           : mkWave 4 24.5
                            : Nil
 
     }
@@ -152,20 +148,38 @@ mkDefaultState {-sounds-} = unsafePartial $ do
 
     deltas :: List Number
     deltas = 0.1 : 0.2 : 0.3 : 0.4 : 0.5 : 0.6 : 0.7 : 0.8 : 0.9 : 1.0 : Nil
-    toEnemy delta = { pos: flightPosFun delta }
+    toEnemy delta = { startedAt: Nothing, index: 0
+                    , pathSegments: [ toPathSegment flightPosFun1 delta
+                                    , toPathSegment flightPosFun2 delta
+                                    ]
+                    }
     maxDist = -worldDepth
-    flightPosFun delta t = { x: xPos delta
-                           , y: yPos delta
-                           , z: 0.0
-                           }
-      where
-         -- Enemy just moves in a pattern dependent on time
-         speedFactor = 4.0
-         moderator  = 10.0
-         xPos delta' = let t' = (speedFactor * (t + delta'))/moderator
-                       in 0.7*shipCircleRadius * (cos t' + 0.5 * cos (10.0*t'))
-         yPos delta' = let t' = (speedFactor * (t + delta'))/moderator
-                       in 0.7*shipCircleRadius * (-(sin t') - 0.5 * sin (3.0*t'))
+    duration = 5.0
+
+    toPathSegment fun delta = { duration:   duration
+                              , func:       fun delta
+                              , funcStart:  0.0
+                              , funcFinish: 2.0*pi
+                              }
+    smallRad = 0.7*shipCircleRadius
+
+    flightPosFun1 delta t = { x: xPos delta t
+                            , y: yPos delta t
+                            , z: 0.0
+                            }
+    flightPosFun2 delta t = { x: xPos (-delta) t
+                            , y: -(yPos (-delta) t)
+                            , z: 0.0
+                            }
+--    speedFactor = 4.0
+--    moderator  = 10.0
+    xPos delta t = let t' = t - delta in smallRad * cos t'
+    yPos delta t = let t' = t - delta in smallRad * sin t'
+{-         xPos delta' = let t' = (speedFactor * (t + delta'))/moderator
+                         in 0.7*shipCircleRadius * (cos t' + 0.5 * cos (10.0*t'))
+           yPos delta' = let t' = (speedFactor * (t + delta'))/moderator
+                         in 0.7*shipCircleRadius * (-(sin t') - 0.5 * sin (3.0*t'))
+-}
 
 
 sinU :: Number -> Number
@@ -178,7 +192,6 @@ fmod :: Number -> Number -> Number
 fmod x y = x - Math.floor (x/y)*y
 
 -- UPDATE
-
 update :: Msg -> State -> State
 update msg s =
   case msg of
@@ -224,15 +237,20 @@ update msg s =
                       in s1 { ship = sh { blasters = rec.bs }
                             , soundEvents = rec.snds
                             }
-            -- check for collisions with enemies
+            -- update the enemies
             (s3 :: State) =
-               let sh = s2.ship
-                   res = filterWave s2.time
-                            { ws: toUnfoldable s2.enemyWaves
+              let ws = s2.enemyWaves
+              in s2 { enemyWaves = map (updateWave s.time) ws }
+
+            -- check for collisions with enemies
+            (s4 :: State) =
+               let sh = s3.ship
+                   res = filterWave s.time
+                            { ws: toUnfoldable s3.enemyWaves
                             , ps: sh.blasters }
-               in  s2 { enemyWaves = fromFoldable res.ws
+               in  s3 { enemyWaves = fromFoldable res.ws
                       , ship = sh { blasters = res.ps }}
-        in  updateTime delta $ updateStars delta s3
+        in  updateTime delta $ updateStars delta s4
       -- catch-all
       _ -> s
   where
@@ -241,13 +259,15 @@ update msg s =
     collish :: Time -> List Enemy -> Polar -> Maybe (List Enemy)
     collish _ Nil _ = Nothing
     collish t (e:es) p =
-      let shipP   = polarToPos (actualBlasterPos p)
-          enemyP3 = e.pos t
-      in if posIsectPos3
-              shipP (blasterRadius p)
-              enemyP3 (scaleFactor enemyP3* enemyRadius)
-         then Just es -- collision. Remove the enemy
-         else (Cons e) <$> (collish t es p)
+      case enemyPos e t of
+        Just enemyP3 ->
+          let shipP   = polarToPos (actualBlasterPos p)
+          in if posIsectPos3
+                  shipP (blasterRadius p)
+                  enemyP3 (scaleFactor enemyP3* enemyRadius)
+             then Just es -- collision. Remove the enemy. Return the rest
+             else (Cons e) <$> (collish t es p)
+        Nothing -> Nothing
 
     filterWave :: Time
         -> { ws :: List (Tuple EnemyWaveId EnemyWave), ps :: List Polar }
@@ -256,7 +276,7 @@ update msg s =
     filterWave t { ws: (Cons (Tuple eid wave) waves), ps: ps } =
       let { es: es', ps: ps' } =
             if t >= wave.arriveTime
-              then filterOnCollision (t - wave.arriveTime)
+              then filterOnCollision t
                      { es: wave.enemies, ps: ps }
               else { es: wave.enemies, ps: ps }
       in  add (Tuple eid (wave { enemies = es' })) $
@@ -314,6 +334,28 @@ update msg s =
                  , newStars: LL.snoc rec'.newStars (unsafePartial (fromJust (rec'.s.starCollection LL.!! rec'.s.starCollectionIdx))) }
             else { s:        rec'.s
                  , newStars: LL.snoc rec'.newStars (star { r = star.r + star.r/maxStarR*delta*star.vel }) }
+
+    updateWave :: Time -> EnemyWave -> EnemyWave
+    updateWave t wave =
+      case t >= wave.arriveTime of
+        true  -> wave { enemies = catMaybes $ map (updateEnemy t) wave.enemies }
+        false -> wave
+
+    -- `Nothing` means enemy should be removed
+    updateEnemy :: Time -> Enemy -> Maybe Enemy
+    updateEnemy t en =
+      case en.startedAt of
+        Nothing -> Just $ en { startedAt = Just t }
+        Just startedAt ->
+          case t > startedAt + (en.pathSegments !!! en.index).duration of
+            true ->
+              if en.index == length en.pathSegments - 1
+                then Nothing
+                else Just $ en { startedAt = Just t
+                               ,  index = en.index + 1 }
+            false ->
+              Just en -- leave it alone
+
 
 sign :: Number -> Number
 sign n = if n < 0.0 then -1.0 else 1.0

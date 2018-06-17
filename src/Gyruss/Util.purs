@@ -1,8 +1,12 @@
 module Gyruss.Util where
 
-import Prelude ((*), (+), (-), (/), (<))
 
-import Gyruss.Types (Polar, Pos, Pos3, Ship, screenDist, shipCircleRadius)
+import Gyruss.Types (Polar, Pos, Pos3, Ship, Enemy, Time,
+                     screenDist, shipCircleRadius)
+import Data.Array ((!!))
+import Data.Maybe (fromJust, Maybe(..))
+import Partial.Unsafe (unsafePartial)
+import Prelude ((*), (+), (-), (/), (<), ($))
 import Math (cos, sin)
 
 
@@ -14,8 +18,9 @@ scaleFactor :: Pos3 -> Number
 scaleFactor p3 = screenDist / (screenDist - p3.z)
 
 shipPos :: Ship -> Pos
-shipPos ship = { x:  shipCircleRadius*cos ship.ang
-               , y:  shipCircleRadius*sin ship.ang }
+shipPos ship = { x: shipCircleRadius*cos ship.ang
+               , y: shipCircleRadius*sin ship.ang
+               }
 
 
 polarToPos :: Polar -> Pos
@@ -41,4 +46,23 @@ posIsectPos3 p r p3 r' =
       d  = r + r'
   in dx*dx + dy*dy < d*d
 
+
+-- Unsafe version of (!!)
+infix 5 unsafeIndex as !!!
+
+unsafeIndex :: forall a. Array a -> Int -> a
+unsafeIndex a i = unsafePartial $ fromJust $ a !! i
+
+--
+-- Calculate the position of an enemy
+--
+enemyPos :: Enemy -> Time -> Maybe Pos3
+enemyPos en worldTime =
+  case en.startedAt of
+    Just startedAt' ->
+      let seg = en.pathSegments !!! en.index
+          t   = worldTime - startedAt'
+          t'  = t * (seg.funcFinish - seg.funcStart)/seg.duration + seg.funcStart
+      in Just $ seg.func t'
+    Nothing -> Nothing
 

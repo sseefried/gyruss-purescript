@@ -6,9 +6,9 @@ module Gyruss.Render (
 
 import Gyruss.Types (Enemy, State, Time, enemyRadius, maxStarR,
                      shipCircleRadius, starRadius, worldWidth)
-import Gyruss.Util (blasterRadius, scaleFactor, shipPos)
+import Gyruss.Util (blasterRadius, scaleFactor, shipPos, enemyPos)
 
-import Prelude (Unit, bind, discard, map, min, negate, pure, show, unit, void, ($), (*), (+), (-), (/), (<>), (>=))
+import Prelude (Unit, bind, discard, min, negate, pure, show, unit, void, ($), (*), (+),  (/), (<>))
 
 import Control.Monad.Eff (Eff)
 import Control.Monad.Eff.Random (RANDOM)
@@ -16,12 +16,10 @@ import Control.Monad.ST (ST, STRef, modifySTRef, readSTRef)
 import Data.Traversable (traverse_, traverse)
 import Data.List (List(..), concatMap)
 import Data.Map (values)
-import Data.Tuple (Tuple(..))
+import Data.Maybe (Maybe(..))
 import Data.Int as Int
 import Graphics.Canvas
 import Math (cos, pi, sin)
-
--- import Debug.Trace
 
 render :: forall s e. STRef s State
        -> Eff (st :: ST s, random :: RANDOM
@@ -39,12 +37,8 @@ render st = do
   toScreen s $ do
     renderStars s
     renderShip s "#ffffff"
-    -- FIXME: Refactor
-    traverse_ (renderEnemy s.context2D) $
-      concatMap (\w -> if s.time >= w.arriveTime
-                 then map (\e -> Tuple (s.time - w.arriveTime) e) w.enemies
-                 else Nil)
-        (values s.enemyWaves)
+    traverse_ (renderEnemy s.context2D s.time) $
+      concatMap (\w -> w.enemies) (values s.enemyWaves)
 
 --  traverse (playSoundEvent s.sounds) s.soundEvents
   void $ modifySTRef st $ \s' -> s' { soundEvents = Nil }
@@ -111,27 +105,26 @@ renderShip s color = do
       void $ restore ctx
       pure unit
 
-
-
-
-renderEnemy :: forall e. Context2D -> Tuple Time Enemy
+renderEnemy :: forall e. Context2D -> Time -> Enemy
             -> Eff ( canvas :: CANVAS | e ) Unit
-renderEnemy ctx (Tuple t en) = do
-  void $ save ctx
-  let p = en.pos t
-  void $ setLineWidth 0.2 ctx
-  void $ setStrokeStyle "rgb(255,255,255)" ctx
-  void $ setLineWidth 0.2 ctx
-  void $ beginPath ctx
-  let f = scaleFactor p
-  void $ circlePath ctx
-          { x: p.x
-          , y: p.y
-          , r: f*enemyRadius
-          }
-  void $ stroke ctx
-  void $ restore ctx
-  pure unit
+renderEnemy ctx t en = do
+  case enemyPos en t of
+    Just p -> do
+      void $ save ctx
+      void $ setLineWidth 0.2 ctx
+      void $ setStrokeStyle "rgb(255,255,255)" ctx
+      void $ setLineWidth 0.2 ctx
+      void $ beginPath ctx
+      let f = scaleFactor p
+      void $ circlePath ctx
+              { x: p.x
+              , y: p.y
+              , r: f*enemyRadius
+              }
+      void $ stroke ctx
+      void $ restore ctx
+      pure unit
+    Nothing -> pure unit
 
 --
 -- `toScreen` expects an effect that draws graphics

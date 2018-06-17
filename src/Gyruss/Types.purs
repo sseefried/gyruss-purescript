@@ -6,6 +6,7 @@ import Prelude ((*), (/))
 import Data.List (List)
 import Data.List.Lazy as LL
 import Data.Map (Map)
+import Data.Maybe (Maybe(..))
 import Graphics.Canvas (CanvasElement, Context2D)
 import Math (pi)
 
@@ -150,7 +151,6 @@ type EnemyWave =
 --    , musicBuffer     :: Maybe AudioBuffer
 --    , fireBuffer      :: Maybe AudioBuffer
 --    }
-
 type Time = Number
 
 {-
@@ -158,11 +158,33 @@ Ships have a flight path that start at a particular time and then
 end. Once they reach the end of their flight path they enter a
 holding pattern.
 -}
-type Enemy = { pos :: Time -> Pos3 }
 
+--
+-- * index points the path segment (pathSegements[index]) that is
+--   currently being rendered (we call this "current path segment")
+-- * startedAt is the world time at which the current path segment started
+--   rendering. If `Nothing` then the enemy does not render
+--
+-- if index = pathSegments.length then the enemy is considered
+--
+type Enemy = { startedAt    :: Maybe Time
+             , index        :: Int
+             , pathSegments :: Array PathSegment
+             }
+
+--
+-- `duration` is a period of time over which the function should be sampled.
+-- Call the parameter that is used to sample the function, t.
+-- t will be linearly scaled to another value t' before being pass to `func`.
+-- `funcStart` and `funcFinish` describe the start and finish values of
+-- t' for the function
+--
+-- t is scaled to t' according to the following conditions:
+--   * if t = 0        then t' = funcStart
+--   * if t = duration then t' = funcFinish
+--
 type PathSegment =
-  { start      :: Time
-  , finish     :: Time
+  { duration   :: Time
   , func       :: Time -> Pos3
   , funcStart  :: Time
   , funcFinish :: Time
