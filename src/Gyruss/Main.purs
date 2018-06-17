@@ -184,9 +184,9 @@ update msg s =
   case msg of
       NoOp -> s
       Resize sz -> s { screenSize = sz }
-      Clockwise ks      -> modKeys $ \k -> k { clockwise = ks }
-      Anticlockwise  ks -> modKeys $ \k -> k { anticlockwise = ks}
-      Fire ks -> modKeys $ \k -> k { fire = ks }
+      Clockwise ks      -> modKeys s $ \k -> k { clockwise = ks }
+      Anticlockwise  ks -> modKeys s $ \k -> k { anticlockwise = ks}
+      Fire ks -> modKeys s $ \k -> k { fire = ks }
       Tick delta ->
         -- update movement
         let s1 =
@@ -263,7 +263,7 @@ update msg s =
       in  add (Tuple eid (wave { enemies = es' })) $
             filterWave t { ws: waves, ps: ps' }
       where
-        add w { ws: ws, ps: ps } = { ws: w:ws, ps: ps }
+        add w' { ws: ws', ps: ps' } = { ws: (w':ws'), ps: ps' }
 
     --
     -- Filters enemies and blasters out on any collision.
@@ -278,14 +278,15 @@ update msg s =
         Just es' -> { es: es', ps: ps } -- collision. stop
         Nothing -> addPoint p (filterOnCollision t { es: es, ps: ps })
       where
-        addPoint p rec = rec { ps = p:rec.ps}
+        addPoint p' rec = rec { ps = p':rec.ps}
 
-    modShip s f = s { ship = f s.ship }
-    modShipVel s f =
-      modShip s $ \sh ->
+    modShip s' f = s' { ship = f s'.ship }
+    modShipVel s' f =
+      modShip s' $ \sh ->
         let angVel' = clamp (-shipMaxVel) (f sh.angVel) shipMaxVel
         in  sh { angVel = angVel' }
-    modKeys f = s { keys = f s.keys }
+    modKeys s' f = s' { keys = f s'.keys }
+
     blastersContinue :: List Polar -> Number -> List Polar
     blastersContinue balls delta = catMaybes $ map updateBlasterBall balls
       where
@@ -293,6 +294,7 @@ update msg s =
           if pp.r > shipCircleRadius
             then Nothing
             else Just { r: pp.r + blasterVel*delta, ang: pp.ang }
+
     -- checks if the closest blaster ball (if any) is far enough away
     blasterFarEnough :: List Polar -> Boolean
     blasterFarEnough balls =
@@ -301,10 +303,10 @@ update msg s =
         (b:_) -> b.r > blasterRechargeDistance
 
 
-    updateTime delta s = s { time = s.time + delta }
-    updateStars delta s = rec.s { starField = rec.newStars }
+    updateTime delta s' = s' { time = s'.time + delta }
+    updateStars delta s' = rec.s { starField = rec.newStars }
       where
-        rec = foldl step { s: s, newStars: LL.nil} s.starField
+        rec = foldl step { s: s', newStars: LL.nil} s'.starField
         step :: { s :: State, newStars :: LL.List Star } -> Star
              -> { s :: State, newStars :: LL.List Star }
         step rec' star =
