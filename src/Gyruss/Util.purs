@@ -1,13 +1,9 @@
 module Gyruss.Util where
 
-import Prelude
+import Prelude ((*), (+), (-), (/), (<))
 
-import Gyruss.Types
-
-import Data.List
-import Data.Maybe
-import Data.Tuple
-import Math
+import Gyruss.Types (Polar, Pos, Pos3, Ship, screenDist, shipCircleRadius)
+import Math (cos, sin)
 
 
 --

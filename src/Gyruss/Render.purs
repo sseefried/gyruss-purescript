@@ -4,24 +4,24 @@ module Gyruss.Render (
 
 ) where
 
-import Gyruss.Types
-import Gyruss.Util
+import Gyruss.Types (Enemy, State, Time, enemyRadius, maxStarR,
+                     shipCircleRadius, starRadius, worldWidth)
+import Gyruss.Util (blasterRadius, scaleFactor, shipPos)
 
-import Prelude
+import Prelude (Unit, bind, discard, map, min, negate, pure, show, unit, void, ($), (*), (+), (-), (/), (<>), (>=))
 
 import Control.Monad.Eff (Eff)
-import Control.Monad.Eff.Random
-import Control.Monad.ST
+import Control.Monad.Eff.Random (RANDOM)
+import Control.Monad.ST (ST, STRef, modifySTRef, readSTRef)
 import Data.Traversable (traverse_, traverse)
-import Data.List
+import Data.List (List(..), concatMap)
 import Data.Map (values)
-import Data.Maybe
-import Data.Tuple
+import Data.Tuple (Tuple(..))
 import Data.Int as Int
 import Graphics.Canvas
-import Math hiding (min, max)
+import Math (cos, pi, sin)
 
-import Debug.Trace
+-- import Debug.Trace
 
 render :: forall s e. STRef s State
        -> Eff (st :: ST s, random :: RANDOM
@@ -47,7 +47,7 @@ render st = do
         (values s.enemyWaves)
 
 --  traverse (playSoundEvent s.sounds) s.soundEvents
-  void $ modifySTRef st $ \s -> s { soundEvents = Nil }
+  void $ modifySTRef st $ \s' -> s' { soundEvents = Nil }
   pure unit
 
 -- playSoundEvent :: forall e. Sounds -> SoundEvent -> Eff (wau :: WebAudio | e) Unit

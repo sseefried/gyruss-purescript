@@ -1,8 +1,8 @@
 module Gyruss.Sounds where
 
-import Gyruss.Types
+-- import Gyruss.Types
 
-import Prelude
+-- import Prelude
 
 -- import Audio.WebAudio.Types
 -- import Audio.WebAudio.AudioContext

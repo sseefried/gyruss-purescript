@@ -1,16 +1,12 @@
 module Gyruss.Types where
 
-import Prelude
+import Prelude ((*), (/))
 
 -- import Audio.WebAudio.Types
-import Control.Monad.Eff
-import Control.Monad.Eff.Random
-import Data.Maybe (Maybe)
-import Data.List
+import Data.List (List)
 import Data.List.Lazy as LL
-import Data.Map
-import Data.Tuple
-import Graphics.Canvas
+import Data.Map (Map)
+import Graphics.Canvas (CanvasElement, Context2D)
 import Math (pi)
 
 
@@ -163,3 +159,11 @@ end. Once they reach the end of their flight path they enter a
 holding pattern.
 -}
 type Enemy = { pos :: Time -> Pos3 }
+
+type PathSegment =
+  { start      :: Time
+  , finish     :: Time
+  , func       :: Time -> Pos3
+  , funcStart  :: Time
+  , funcFinish :: Time
+  }

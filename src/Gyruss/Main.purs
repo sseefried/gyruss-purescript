@@ -249,7 +249,6 @@ update msg s =
          then Just es -- collision. Remove the enemy
          else (Cons e) <$> (collish t es p)
 
-
     filterWave :: Time
         -> { ws :: List (Tuple EnemyWaveId EnemyWave), ps :: List Polar }
         -> { ws :: List (Tuple EnemyWaveId EnemyWave), ps :: List Polar }
