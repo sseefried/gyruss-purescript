@@ -20,7 +20,7 @@ import Data.Array (length)
 import Data.Either (Either(..))
 import Data.Int (toNumber)
 import Data.Int as Int
-import Data.List (catMaybes)
+import Data.List (catMaybes, zip)
 import Data.List as L
 import Data.List.Lazy (replicateM, snoc, take, (!!)) as LL
 import Data.List.Lazy.Types (List, nil) as LL
@@ -42,7 +42,9 @@ import Gyruss.Util (actualBlasterPos, blasterRadius, polarToPos, posIsectPos3
                    , scaleFactor, enemyPos, (!!!))
 import Math (floor) as Math
 import Partial.Unsafe (unsafePartial)
-import Prelude (Unit, bind, clamp, const, discard, map, max, min, mod, negate, pure, unit, void, ($), (&&), (*), (+), (-), (/), (<), (<$>), (>), (>=), (==))
+import Prelude (Unit, bind, clamp, const, discard, map, max, min, mod, negate
+               , pure, unit, void, ($), (&&), (*), (+), (-), (/), (<), (<$>)
+               , (>), (>=), (==), not)
 
 {-
 
@@ -130,63 +132,89 @@ mkDefaultState {-sounds-} = unsafePartial $ do
     , starField:         LL.take numStars stars
     , time:              0.0
     , enemyWaves:        fromFoldable $
-                             mkWave 1 1.0
-                           : mkWave 2 8.5
-                           : mkWave 3 16.0
-                           : mkWave 4 24.5
+                             mkWave 1 1.0  0.0
+                           : mkWave 2 8.5  (pi/4.0)
+                           : mkWave 3 16.0 (-pi/4.0)
+                           : mkWave 4 24.5 pi
                            : Nil
     }
 
   where
-    mkWave waveId arriveTime =
+    mkWave waveId arriveTime angle =
       Tuple waveId { arriveTime: arriveTime
                    , sort: Normal
-                   , enemies: map toEnemy deltas
+                   , enemies: map (toEnemy angle) (zip lrs deltas)
                    }
 
     mkSeq _ _ 0 = Nil
     mkSeq start inc n = start : mkSeq (start+inc) inc (n-1)
 
-    deltas :: List Number
-    deltas = mkSeq 0.0 0.1 10
+    numEnemies = 10
 
-    toEnemy delta = { startedAt: Nothing
-                    , delta: delta
-                    , index: 0
-                    , pathSegments:
-                        [
-                          { duration:   1.5
-                          , func:       fun1
-                          , funcStart:  0.0
-                          , funcFinish: pi/2.0
-                          }
-                        , { duration:   0.5
-                          , func:       fun2
-                          , funcStart:  0.0
-                          , funcFinish: 0.5
-                          }
-                        ]
-                    }
+    deltas :: List Number
+    deltas = mkSeq 0.0 0.1 numEnemies
+
+    lrs = go numEnemies true
+      where
+        go 0 _ = Nil
+        go n b = b : go (n-1) (not b)
+
+    toEnemy angle (Tuple onLeft delta) =
+      { startedAt: Nothing
+      , delta: delta
+      , index: 0
+      , pathSegments:
+          [
+            { duration:   1.5
+            , func:       rotateXY angle $ fun1 onLeft
+            , funcStart:  0.0
+            , funcFinish: pi/2.0
+            }
+          , { duration:   0.5
+            , func:       rotateXY angle $ fun2
+            , funcStart:  0.0
+            , funcFinish: 0.5
+            }
+          , { duration:   1.5
+            , func:       rotateXY angle $ fun3 onLeft
+            , funcStart:  0.0
+            , funcFinish: pi/2.0
+            }
+          ]
+      }
     maxDist = -worldDepth
 
     smallRad = 0.7*shipCircleRadius
 
-    scaleXY k f t = { x: k*r.x, y: k*r.y, z: r.z }
-      where
-        r = f t
+    scale k f t = { x: k*r.x, y: k*r.y, z: k*r.z }
+      where r = f t
 
-    fun1 = scaleXY smallRad $ \t ->
-                   let t' = (pi/2.0 - t)
-                   in  { x: 0.375*sin(2.0*t')
-                       , y: 0.5*sin t' + 0.125 * sin(2.0*t') - 0.5
-                       , z: -worldDepth * (t'*2.0/pi)
-                       }
+    rotateXY a f t = { x: r.x * cos a - r.y * sin a
+                     , y: r.x * sin a + r.y * cos a
+                     , z: r.z
+                     }
+      where r = f t
 
-    fun2  = scaleXY smallRad $ \t ->
+    -- Path on left or right depe
+    fun1 onLeft = scale smallRad $ \t ->
+                    let t' = (pi/2.0 - t)
+                    in  { x: k * 0.375*sin(2.0*t')
+                        , y: 0.5*sin t' + 0.125 * sin(2.0*t') - 0.5
+                        , z: -8.0 * (t'*2.0/pi)
+                        }
+      where k = if onLeft then 1.0 else -1.0
+    fun2 = scale smallRad $ \t ->
              { x: 0.0
              , y: -0.5 - t
              , z: 0.0
              }
+    fun3 onLeft =  scale smallRad $ \t ->
+                     { x: k * 0.375*sin(2.0*t)
+                     , y: sin t + 0.25 * sin(2.0*t) - 1.0
+                     , z:  - 8.0 * (t*2.0/pi)
+                     }
+      where k = if onLeft then 1.0 else -1.0
+
     xPos t = smallRad * cos t
     yPos t = smallRad * sin t
 

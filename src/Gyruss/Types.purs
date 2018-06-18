@@ -32,10 +32,10 @@ angUnit :: Number
 angUnit = pi/1000.0
 
 shipDrag :: Number
-shipDrag = 0.005
+shipDrag = 0.01
 
 shipAccel :: Number
-shipAccel = 3.0*angUnit
+shipAccel = 2.0*angUnit
 
 shipMaxVel :: Number
 shipMaxVel = 20.0*angUnit
