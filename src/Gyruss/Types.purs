@@ -53,10 +53,10 @@ generatedStars :: Int
 generatedStars = 1000
 
 minStarVel :: Number
-minStarVel = 20.0
+minStarVel = 100.0
 
 maxStarVel :: Number
-maxStarVel = 100.0
+maxStarVel = 200.0
 
 starRadius :: Number
 starRadius = 0.25
