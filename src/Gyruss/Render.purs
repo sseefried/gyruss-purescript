@@ -19,7 +19,7 @@ import Data.Map (values)
 import Data.Maybe (Maybe(..))
 import Data.Int as Int
 import Graphics.Canvas
-import Math (cos, pi, sin)
+import Math (cos, pi, sin, floor)
 
 render :: forall s e. STRef s State
        -> Eff (st :: ST s, random :: RANDOM
@@ -39,7 +39,7 @@ render st = do
     renderShip s "#ffffff"
     traverse_ (renderEnemy s.context2D s.time) $
       concatMap (\w -> w.enemies) (values s.enemyWaves)
-
+    renderScore s
 --  traverse (playSoundEvent s.sounds) s.soundEvents
   void $ modifySTRef st $ \s' -> s' { soundEvents = Nil }
   pure unit
@@ -49,6 +49,17 @@ render st = do
 --   case ev of
 --     FireSound -> playBufferedSound sounds sounds.fireBuffer
 
+
+renderScore :: forall e. State -> Eff (canvas :: CANVAS | e) Unit
+renderScore s = do
+  let ctx = s.context2D
+      fontSize = floor (30.0 / ((min s.screenSize.w s.screenSize.h) / worldWidth))
+  void $ scale { scaleX: 1.0, scaleY: yFactor } ctx
+  void $ setFont (show fontSize <> "px Helvetica") ctx
+  void $ setFillStyle "yellow" ctx
+  void $ fillText ctx  (show s.score) (-worldWidth/4.0) (yFactor*(0.45*worldWidth))
+  where
+    yFactor = -1.0
 
 renderStars :: forall e.
                State

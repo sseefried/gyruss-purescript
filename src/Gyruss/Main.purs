@@ -39,11 +39,11 @@ import Gyruss.Types (Enemy, EnemySort(..), EnemyWave, EnemyWaveId, KeyState(..)
                     , numStars, shipAccel, shipCircleRadius, shipDrag
                     , shipMaxVel, worldDepth, worldWidth)
 import Gyruss.Util (actualBlasterPos, blasterRadius, polarToPos, posIsectPos3
-                   , scaleFactor, enemyPos, (!!!))
+                   , scaleFactor, enemyPos, (!!!), enemyPoints)
 import Math (floor) as Math
 import Partial.Unsafe (unsafePartial)
 import Prelude (Unit, bind, clamp, const, discard, map, max, min, mod, negate
-               , pure, unit, void, ($), (&&), (*), (+), (-), (/), (<), (<$>)
+               , pure, unit, void, ($), (&&), (*), (+), (-), (/), (<)
                , (>), (>=), (==), not)
 
 {-
@@ -137,12 +137,12 @@ mkDefaultState {-sounds-} = unsafePartial $ do
                            : mkWave 3 16.0 (-pi/4.0)
                            : mkWave 4 24.5 pi
                            : Nil
+    , score: 0
     }
 
   where
     mkWave waveId arriveTime angle =
       Tuple waveId { arriveTime: arriveTime
-                   , sort: Normal
                    , enemies: map (toEnemy angle) (zip lrs deltas)
                    }
 
@@ -162,6 +162,7 @@ mkDefaultState {-sounds-} = unsafePartial $ do
     toEnemy angle (Tuple onLeft delta) =
       { startedAt: Nothing
       , delta: delta
+      , sort: Normal
       , index: 0
       , pathSegments:
           [
@@ -284,16 +285,21 @@ update msg s =
                let sh = s3.ship
                    res = filterWave s.time
                             { ws: toUnfoldable s3.enemyWaves
-                            , ps: sh.blasters }
+                            , ps: sh.blasters
+                            , points: 0
+                            }
                in  s3 { enemyWaves = fromFoldable res.ws
-                      , ship = sh { blasters = res.ps }}
-        in  updateTime delta $ updateStars delta s4
+                      , ship = sh { blasters = res.ps }
+                      , score = s3.score + res.points }
+        in   updateTime delta
+           $ updateStars delta s4
       -- catch-all
       _ -> s
   where
-    -- Returns 'Just es' on a collision where 'es' is the remaining enemies
+    -- Returns 'Just (Tuple points es)' on a collision where
+    -- 'es' is the remaining enemies and 'points' the score associated.
     -- Returns 'Nothing' on no collisions
-    collish :: Time -> List Enemy -> Polar -> Maybe (List Enemy)
+    collish :: Time -> List Enemy -> Polar -> Maybe (Tuple Int (List Enemy))
     collish _ Nil _ = Nothing
     collish t (e:es) p =
       case enemyPos e t of
@@ -302,37 +308,43 @@ update msg s =
           in if posIsectPos3
                   shipP (blasterRadius p)
                   enemyP3 (scaleFactor enemyP3* enemyRadius)
-             then Just es -- collision. Remove the enemy. Return the rest
-             else (Cons e) <$> (collish t es p)
+             then -- collision. Remove the enemy. Return the rest
+                  Just $ Tuple (enemyPoints e) es
+             else consEnemy e $ collish t es p
         Nothing -> Nothing
+      where
+        consEnemy e' mbTup = case mbTup of
+          Just (Tuple points es') -> Just $ Tuple points (e':es')
+          Nothing                -> Nothing
 
     filterWave :: Time
-        -> { ws :: List (Tuple EnemyWaveId EnemyWave), ps :: List Polar }
-        -> { ws :: List (Tuple EnemyWaveId EnemyWave), ps :: List Polar }
-    filterWave t { ws: Nil, ps: ps } = { ws: Nil, ps: ps }
-    filterWave t { ws: (Cons (Tuple eid wave) waves), ps: ps } =
-      let { es: es', ps: ps' } =
+        -> { ws :: List (Tuple EnemyWaveId EnemyWave), ps :: List Polar, points :: Int }
+        -> { ws :: List (Tuple EnemyWaveId EnemyWave), ps :: List Polar, points :: Int }
+    filterWave t { ws: Nil, ps: ps, points: points } = { ws: Nil, ps: ps, points: points }
+    filterWave t { ws: (Cons (Tuple eid wave) waves), ps: ps, points: points } =
+      let { es: es', ps: ps', points: points' } =
             if t >= wave.arriveTime
               then filterOnCollision t
-                     { es: wave.enemies, ps: ps }
-              else { es: wave.enemies, ps: ps }
+                     { es: wave.enemies, ps: ps, points: points }
+              else { es: wave.enemies, ps: ps, points: points }
       in  add (Tuple eid (wave { enemies = es' })) $
-            filterWave t { ws: waves, ps: ps' }
+            filterWave t { ws: waves, ps: ps', points: points' }
       where
-        add w' { ws: ws', ps: ps' } = { ws: (w':ws'), ps: ps' }
+        add w' { ws: ws',      ps: ps', points: points' } =
+               { ws: (w':ws'), ps: ps', points: points' }
 
     --
     -- Filters enemies and blasters out on any collision.
     -- Stops at the first collision
     --
     filterOnCollision :: Time
-                      -> { es :: List Enemy, ps :: List Polar }
-                      -> { es :: List Enemy, ps :: List Polar }
-    filterOnCollision _ rec@{ es: es, ps: Nil } = rec
-    filterOnCollision t { es: es, ps: p:ps} =
+                      -> { es :: List Enemy, ps :: List Polar, points :: Int }
+                      -> { es :: List Enemy, ps :: List Polar, points :: Int }
+    filterOnCollision _ rec@{ es: _, ps: Nil, points: _  } = rec
+    filterOnCollision t { es: es, ps: p:ps, points: points} =
       case collish t es p of
-        Just es' -> { es: es', ps: ps } -- collision. stop
-        Nothing -> addPoint p (filterOnCollision t { es: es, ps: ps })
+        Just (Tuple points' es') -> { es: es', ps: ps, points: points' } -- collision. stop
+        Nothing -> addPoint p (filterOnCollision t { es: es, ps: ps, points: points })
       where
         addPoint p' rec = rec { ps = p':rec.ps}
 

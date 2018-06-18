@@ -1,8 +1,8 @@
 module Gyruss.Util where
 
 
-import Gyruss.Types (Polar, Pos, Pos3, Ship, Enemy, Time,
-                     screenDist, shipCircleRadius)
+import Gyruss.Types (Polar, Pos, Pos3, Ship, Enemy, Time, EnemySort(..)
+                    , screenDist, shipCircleRadius)
 import Data.Array ((!!))
 import Data.Maybe (fromJust, Maybe(..))
 import Partial.Unsafe (unsafePartial)
@@ -27,7 +27,7 @@ polarToPos :: Polar -> Pos
 polarToPos pp = { x: pp.r * cos pp.ang, y: pp.r * sin pp.ang }
 
 actualBlasterPos :: Polar -> Polar
-actualBlasterPos pp = { r: shipCircleRadius - pp.r , ang: pp.ang }
+actualBlasterPos pp = { r: shipCircleRadius - pp.r, ang: pp.ang }
 
 --
 -- Given the position of the blaster (relative to ship) returns the
@@ -65,3 +65,7 @@ enemyPos en worldTime =
       in Just $ seg.func t'
     Nothing -> Nothing
 
+enemyPoints :: Enemy -> Int
+enemyPoints en =
+  case en.sort of
+    Normal -> 50

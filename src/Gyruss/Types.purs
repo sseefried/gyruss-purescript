@@ -130,6 +130,7 @@ type State =
   , starField          :: LL.List Star
   , time               :: Time -- cumulative time
   , enemyWaves         :: Map EnemyWaveId EnemyWave
+  , score              :: Int
   }
 
 data EnemySort = Normal
@@ -141,7 +142,6 @@ type EnemyWaveId = Int
 --
 type EnemyWave =
   { arriveTime    :: Time
-  , sort          :: EnemySort
   , enemies       :: List Enemy
   }
 
@@ -170,6 +170,7 @@ holding pattern.
 -- if index = pathSegments.length then the enemy is considered
 --
 type Enemy = { startedAt    :: Maybe Time
+             , sort         :: EnemySort
              , delta        :: Number -- a delay time after which this enemy appears
              , index        :: Int
              , pathSegments :: Array PathSegment
