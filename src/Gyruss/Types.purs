@@ -62,7 +62,7 @@ starRadius :: Number
 starRadius = 0.25
 
 enemyRadius :: Number
-enemyRadius = 3.0
+enemyRadius = 2.0
 
 maxBlasterBalls :: Int
 maxBlasterBalls = 3
@@ -164,10 +164,13 @@ holding pattern.
 --   currently being rendered (we call this "current path segment")
 -- * startedAt is the world time at which the current path segment started
 --   rendering. If `Nothing` then the enemy does not render
+-- * delta is a short delay after which the enemy appears. this
+--   will affect its startedAt value
 --
 -- if index = pathSegments.length then the enemy is considered
 --
 type Enemy = { startedAt    :: Maybe Time
+             , delta        :: Number -- a delay time after which this enemy appears
              , index        :: Int
              , pathSegments :: Array PathSegment
              }

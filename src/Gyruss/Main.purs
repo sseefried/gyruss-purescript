@@ -130,12 +130,11 @@ mkDefaultState {-sounds-} = unsafePartial $ do
     , starField:         LL.take numStars stars
     , time:              0.0
     , enemyWaves:        fromFoldable $
-                             mkWave 1 0.0
+                             mkWave 1 1.0
                            : mkWave 2 8.5
                            : mkWave 3 16.0
                            : mkWave 4 24.5
                            : Nil
-
     }
 
   where
@@ -145,41 +144,51 @@ mkDefaultState {-sounds-} = unsafePartial $ do
                    , enemies: map toEnemy deltas
                    }
 
+    mkSeq _ _ 0 = Nil
+    mkSeq start inc n = start : mkSeq (start+inc) inc (n-1)
 
     deltas :: List Number
-    deltas = 0.1 : 0.2 : 0.3 : 0.4 : 0.5 : 0.6 : 0.7 : 0.8 : 0.9 : 1.0 : Nil
-    toEnemy delta = { startedAt: Nothing, index: 0
-                    , pathSegments: [ toPathSegment flightPosFun1 delta
-                                    , toPathSegment flightPosFun2 delta
-                                    ]
+    deltas = mkSeq 0.0 0.1 10
+
+    toEnemy delta = { startedAt: Nothing
+                    , delta: delta
+                    , index: 0
+                    , pathSegments:
+                        [
+                          { duration:   1.5
+                          , func:       fun1
+                          , funcStart:  0.0
+                          , funcFinish: pi/2.0
+                          }
+                        , { duration:   0.5
+                          , func:       fun2
+                          , funcStart:  0.0
+                          , funcFinish: 0.5
+                          }
+                        ]
                     }
     maxDist = -worldDepth
-    duration = 5.0
 
-    toPathSegment fun delta = { duration:   duration
-                              , func:       fun delta
-                              , funcStart:  0.0
-                              , funcFinish: 2.0*pi
-                              }
     smallRad = 0.7*shipCircleRadius
 
-    flightPosFun1 delta t = { x: xPos delta t
-                            , y: yPos delta t
-                            , z: 0.0
-                            }
-    flightPosFun2 delta t = { x: xPos (-delta) t
-                            , y: -(yPos (-delta) t)
-                            , z: 0.0
-                            }
---    speedFactor = 4.0
---    moderator  = 10.0
-    xPos delta t = let t' = t - delta in smallRad * cos t'
-    yPos delta t = let t' = t - delta in smallRad * sin t'
-{-         xPos delta' = let t' = (speedFactor * (t + delta'))/moderator
-                         in 0.7*shipCircleRadius * (cos t' + 0.5 * cos (10.0*t'))
-           yPos delta' = let t' = (speedFactor * (t + delta'))/moderator
-                         in 0.7*shipCircleRadius * (-(sin t') - 0.5 * sin (3.0*t'))
--}
+    scaleXY k f t = { x: k*r.x, y: k*r.y, z: r.z }
+      where
+        r = f t
+
+    fun1 = scaleXY smallRad $ \t ->
+                   let t' = (pi/2.0 - t)
+                   in  { x: 0.375*sin(2.0*t')
+                       , y: 0.5*sin t' + 0.125 * sin(2.0*t') - 0.5
+                       , z: -worldDepth * (t'*2.0/pi)
+                       }
+
+    fun2  = scaleXY smallRad $ \t ->
+             { x: 0.0
+             , y: -0.5 - t
+             , z: 0.0
+             }
+    xPos t = smallRad * cos t
+    yPos t = smallRad * sin t
 
 
 sinU :: Number -> Number
@@ -337,24 +346,25 @@ update msg s =
 
     updateWave :: Time -> EnemyWave -> EnemyWave
     updateWave t wave =
-      case t >= wave.arriveTime of
-        true  -> wave { enemies = catMaybes $ map (updateEnemy t) wave.enemies }
-        false -> wave
+      wave { enemies = catMaybes $ map (updateEnemy wave.arriveTime t)
+                                        wave.enemies }
 
     -- `Nothing` means enemy should be removed
-    updateEnemy :: Time -> Enemy -> Maybe Enemy
-    updateEnemy t en =
-      case en.startedAt of
-        Nothing -> Just $ en { startedAt = Just t }
-        Just startedAt ->
-          case t > startedAt + (en.pathSegments !!! en.index).duration of
-            true ->
-              if en.index == length en.pathSegments - 1
-                then Nothing
-                else Just $ en { startedAt = Just t
-                               ,  index = en.index + 1 }
-            false ->
-              Just en -- leave it alone
+    updateEnemy :: Time -> Time -> Enemy -> Maybe Enemy
+    updateEnemy arriveTime t en =
+      case t >= arriveTime + en.delta of
+        true ->
+          case en.startedAt of
+            Nothing -> Just $ en { startedAt = Just t }
+            Just startedAt ->
+              case t > startedAt + (en.pathSegments !!! en.index).duration of
+                true ->
+                  if en.index == length en.pathSegments - 1
+                    then Nothing
+                    else Just $ en { startedAt = Just t
+                                   ,  index = en.index + 1 }
+                false -> Just en -- leave it alone
+        false -> Just en -- leave it alone
 
 
 sign :: Number -> Number

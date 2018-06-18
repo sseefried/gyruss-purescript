@@ -46,7 +46,6 @@ posIsectPos3 p r p3 r' =
       d  = r + r'
   in dx*dx + dy*dy < d*d
 
-
 -- Unsafe version of (!!)
 infix 5 unsafeIndex as !!!
 
