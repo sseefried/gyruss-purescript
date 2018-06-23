@@ -67,6 +67,12 @@ enemyRadius = 2.0
 maxBlasterBalls :: Int
 maxBlasterBalls = 3
 
+bombRadius :: Number
+bombRadius = 0.4
+
+bombSpeed :: Number
+bombSpeed = 2.0
+
 --
 -- The distance a blaster ball must travel before you can fire another
 --
@@ -130,6 +136,7 @@ type State =
   , starField          :: LL.List Star
   , time               :: Time -- cumulative time
   , enemyWaves         :: Map EnemyWaveId EnemyWave
+  , bombs              :: List Bomb
   , score              :: Int
   }
 
@@ -169,11 +176,12 @@ holding pattern.
 --
 -- if index = pathSegments.length then the enemy is considered
 --
-type Enemy = { startedAt    :: Maybe Time
-             , sort         :: EnemySort
-             , delta        :: Number -- a delay time after which this enemy appears
-             , index        :: Int
-             , pathSegments :: Array PathSegment
+type Enemy = { startedAt     :: Maybe Time
+             , sort          :: EnemySort
+             , delta         :: Number -- a delay time after which this enemy appears
+             , index         :: Int
+             , pathSegments  :: Array PathSegment
+             , releaseBombAt :: Maybe Time
              }
 
 --
@@ -192,4 +200,10 @@ type PathSegment =
   , func       :: Time -> Pos3
   , funcStart  :: Time
   , funcFinish :: Time
+  }
+
+type Bomb =
+  { pos :: Pos
+  , dir :: { x :: Number, y :: Number }
+  -- ^ unit vector signifying direction of bomb travel
   }

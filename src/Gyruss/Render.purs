@@ -4,11 +4,12 @@ module Gyruss.Render (
 
 ) where
 
-import Gyruss.Types (Enemy, State, Time, enemyRadius, maxStarR,
-                     shipCircleRadius, starRadius, worldWidth)
+import Gyruss.Types (Enemy, State, Time, Bomb, enemyRadius, maxStarR,
+                     shipCircleRadius, starRadius, worldWidth, bombRadius)
 import Gyruss.Util (blasterRadius, scaleFactor, shipPos, enemyPos)
 
-import Prelude (Unit, bind, discard, min, negate, pure, show, unit, void, ($), (*), (+),  (/), (<>))
+import Prelude ( Unit, bind, discard, min, negate, pure, show, unit, void
+               , ($), (*), (+),  (/), (<>))
 
 import Control.Monad.Eff (Eff)
 import Control.Monad.Eff.Random (RANDOM)
@@ -37,8 +38,8 @@ render st = do
   toScreen s $ do
     renderStars s
     renderShip s "#ffffff"
-    traverse_ (renderEnemy s.context2D s.time) $
-      concatMap (\w -> w.enemies) (values s.enemyWaves)
+    renderEnemies s
+    renderBombs s
     renderScore s
 --  traverse (playSoundEvent s.sounds) s.soundEvents
   void $ modifySTRef st $ \s' -> s' { soundEvents = Nil }
@@ -116,6 +117,11 @@ renderShip s color = do
       void $ restore ctx
       pure unit
 
+renderEnemies :: forall e. State -> Eff ( canvas :: CANVAS | e ) Unit
+renderEnemies s =
+  traverse_ (renderEnemy s.context2D s.time) $
+   concatMap (\w -> w.enemies) (values s.enemyWaves)
+
 renderEnemy :: forall e. Context2D -> Time -> Enemy
             -> Eff ( canvas :: CANVAS | e ) Unit
 renderEnemy ctx t en = do
@@ -136,6 +142,19 @@ renderEnemy ctx t en = do
       void $ restore ctx
       pure unit
     Nothing -> pure unit
+
+renderBombs :: forall e. State -> Eff (canvas :: CANVAS | e) Unit
+renderBombs s =
+  traverse_ (renderBomb s.context2D) $ s.bombs
+
+renderBomb :: forall e. Context2D -> Bomb -> Eff (canvas :: CANVAS | e) Unit
+renderBomb ctx b = do
+  void $ save ctx
+  void $ beginPath ctx
+  void $ setFillStyle "rgba(255,255,0)" ctx -- yellow
+  void $ fillCircle ctx { x: b.pos.x, y: b.pos.y, r: bombRadius }
+  void $ fill ctx
+  void $ restore ctx
 
 --
 -- `toScreen` expects an effect that draws graphics

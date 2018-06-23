@@ -20,20 +20,20 @@ import Data.Array (length)
 import Data.Either (Either(..))
 import Data.Int (toNumber)
 import Data.Int as Int
-import Data.List (catMaybes, zip)
+import Data.List (catMaybes, zip, unzip, concat)
 import Data.List as L
 import Data.List.Lazy (replicateM, snoc, take, (!!)) as LL
 import Data.List.Lazy.Types (List, nil) as LL
 import Data.List.Types (List(..), (:))
-import Data.Map (toUnfoldable, fromFoldable)
+import Data.Map (toUnfoldable, fromFoldable, values)
 import Data.Maybe (Maybe(..), fromJust)
 import Data.Traversable (foldl)
-import Data.Tuple (Tuple(..))
+import Data.Tuple (Tuple(..), fst, snd)
 import Gyruss.Render (CANVAS, getCanvasElementById, getContext2D, render
                      , setCanvasHeight, setCanvasWidth)
 import Gyruss.Types (Enemy, EnemySort(..), EnemyWave, EnemyWaveId, KeyState(..)
                     , Msg(..), Polar, Pos, Ship, Size, SoundEvent(..), Star
-                    , State, Time, blasterRechargeDistance, blasterVel
+                    , State, Time, Bomb, blasterRechargeDistance, blasterVel
                     , enemyRadius, framesPerSecond, generatedStars
                     , maxBlasterBalls, maxStarR, maxStarVel, minStarVel
                     , numStars, shipAccel, shipCircleRadius, shipDrag
@@ -44,7 +44,9 @@ import Math (floor) as Math
 import Partial.Unsafe (unsafePartial)
 import Prelude (Unit, bind, clamp, const, discard, map, max, min, mod, negate
                , pure, unit, void, ($), (&&), (*), (+), (-), (/), (<)
-               , (>), (>=), (==), not)
+               , (>), (>=), (==), not, (<$>), (<>))
+
+import Debug.Trace (spy)
 
 {-
 
@@ -137,7 +139,8 @@ mkDefaultState {-sounds-} = unsafePartial $ do
                            : mkWave 3 16.0 (-pi/4.0)
                            : mkWave 4 24.5 pi
                            : Nil
-    , score: 0
+    , bombs:             Nil
+    , score:             0
     }
 
   where
@@ -182,6 +185,7 @@ mkDefaultState {-sounds-} = unsafePartial $ do
             , funcFinish: pi/2.0
             }
           ]
+      , releaseBombAt: Just 2.0
       }
     maxDist = -worldDepth
 
@@ -277,8 +281,11 @@ update msg s =
                             }
             -- update the enemies
             (s3 :: State) =
-              let ws = s2.enemyWaves
-              in s2 { enemyWaves = map (updateWave s.time) ws }
+              -- TODO: Refactor
+              let res = map (updateWave s.time s.ship) s2.enemyWaves
+                  ws' = map fst res
+                  bombss = values $ map snd res
+              in  s2 { enemyWaves = ws', bombs = s2.bombs <> concat bombss }
 
             -- check for collisions with enemies
             (s4 :: State) =
@@ -384,10 +391,12 @@ update msg s =
             else { s:        rec'.s
                  , newStars: LL.snoc rec'.newStars (star { r = star.r + star.r/maxStarR*delta*star.vel }) }
 
-    updateWave :: Time -> EnemyWave -> EnemyWave
-    updateWave t wave =
-      wave { enemies = catMaybes $ map (updateEnemy wave.arriveTime t)
-                                        wave.enemies }
+    updateWave :: Time -> Ship -> EnemyWave -> Tuple EnemyWave (List Bomb)
+    updateWave t ship wave =
+      let enemies' = catMaybes $ map (updateEnemy wave.arriveTime t)
+                                        wave.enemies
+          Tuple enemies'' mbBombs = unzip $ map (maybeReleaseBomb t ship) enemies'
+      in Tuple wave { enemies = enemies''} (catMaybes mbBombs)
 
     -- `Nothing` means enemy should be removed
     updateEnemy :: Time -> Time -> Enemy -> Maybe Enemy
@@ -397,15 +406,29 @@ update msg s =
           case en.startedAt of
             Nothing -> Just $ en { startedAt = Just t }
             Just startedAt ->
-              case t > startedAt + (en.pathSegments !!! en.index).duration of
-                true ->
-                  if en.index == length en.pathSegments - 1
-                    then Nothing
-                    else Just $ en { startedAt = Just t
-                                   ,  index = en.index + 1 }
-                false -> Just en -- leave it alone
+              let pathDuration = (en.pathSegments !!! en.index).duration
+              in case t > startedAt + pathDuration of
+                   true ->
+                     if en.index == length en.pathSegments - 1
+                       then Nothing
+                       else Just $
+                              en { startedAt = Just t
+                                 , releaseBombAt =
+                                     (\x -> x - pathDuration) <$>
+                                       en.releaseBombAt
+                                 ,  index = en.index + 1 }
+                   false -> Just en -- leave it alone
         false -> Just en -- leave it alone
-
+    maybeReleaseBomb :: Time -> Ship -> Enemy -> Tuple Enemy (Maybe Bomb)
+    maybeReleaseBomb t _ en =
+      case Tuple en.releaseBombAt (enemyPos en t) of
+        Tuple (Just t') (Just epos) ->
+          if t > t' + en.delta
+            then let bomb = Just { pos: { x: epos.x, y: epos.y }
+                                 , dir: { x: 0.0, y: 1.0 } }
+                 in  Tuple (en { releaseBombAt = Nothing }) bomb
+            else Tuple en Nothing
+        _ -> Tuple en Nothing
 
 sign :: Number -> Number
 sign n = if n < 0.0 then -1.0 else 1.0
@@ -450,16 +473,16 @@ subscribeTick st = void $ setInterval (Int.floor (1000.0/framesPerSecond)) f
 keydown :: String -> Msg
 keydown code =
   case code of
-     "Space" -> Fire KeyDown
-     "ArrowLeft" -> Clockwise KeyDown
+     "Space"      -> Fire          KeyDown
+     "ArrowLeft"  -> Clockwise     KeyDown
      "ArrowRight" -> Anticlockwise KeyDown
      _  -> NoOp
 
 keyup :: String -> Msg
 keyup code =
   case code of
-     "Space" -> Fire KeyUp
-     "ArrowLeft" -> Clockwise KeyUp
+     "Space"      -> Fire          KeyUp
+     "ArrowLeft"  -> Clockwise     KeyUp
      "ArrowRight" -> Anticlockwise KeyUp
      _  -> NoOp
 
