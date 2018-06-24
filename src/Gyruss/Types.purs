@@ -39,6 +39,9 @@ shipAccel = 2.0*angUnit
 shipMaxVel :: Number
 shipMaxVel = 20.0*angUnit
 
+shipRadius :: Number
+shipRadius = 2.0
+
 blasterVel :: Number
 blasterVel = 100.0
 
@@ -125,6 +128,8 @@ type Ship =
   , blasters :: List Polar -- empty means it hasn't been fired
   }
 
+data FSMState = Level | GameOver
+
 type State =
   { context2D          :: Context2D
   , canvas             :: CanvasElement
@@ -140,6 +145,7 @@ type State =
   , enemyWaves         :: List EnemyWave
   , bombs              :: List Bomb
   , score              :: Int
+  , fsmState           :: FSMState
   }
 
 data EnemySort = Normal

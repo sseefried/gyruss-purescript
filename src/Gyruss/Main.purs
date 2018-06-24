@@ -7,7 +7,7 @@ import Control.Monad.Eff.Console (CONSOLE)
 import Control.Monad.Eff.Random (RANDOM, randomRange)
 import Control.Monad.Eff.Timer (TIMER, setInterval)
 import Control.Monad.Except (runExcept)
-import Control.Monad.ST (ST, STRef, modifySTRef, newSTRef)
+import Control.Monad.ST (ST, STRef, modifySTRef, newSTRef, readSTRef)
 import DOM (DOM)
 import DOM.Event.EventTarget (addEventListener, eventListener)
 import DOM.Event.KeyboardEvent (code, eventToKeyboardEvent)
@@ -18,6 +18,7 @@ import DOM.HTML.Types (windowToEventTarget)
 import DOM.HTML.Window (innerHeight, innerWidth)
 import Data.Array (length)
 import Data.Either (Either(..))
+import Data.Foldable (any)
 import Data.Int (toNumber)
 import Data.Int as Int
 import Data.List (catMaybes, zip, unzip, concat)
@@ -28,23 +29,23 @@ import Data.List.Types (List(..), (:))
 import Data.Maybe (Maybe(..), fromJust)
 import Data.Traversable (foldl, sequence, traverse)
 import Data.Tuple (Tuple(..), fst, snd)
-import Gyruss.Render (CANVAS, getCanvasElementById, getContext2D, render
-                     , setCanvasHeight, setCanvasWidth)
-import Gyruss.Types (Enemy, EnemySort(..), EnemyWave
-                    , KeyState(..), Msg(..), Polar, Vec2, Ship, Size
-                    , SoundEvent(..), Star, State, Time, Bomb
-                    , blasterRechargeDistance, blasterVel, enemyRadius
-                    , framesPerSecond, generatedStars, maxBlasterBalls
-                    , maxStarR, maxStarVel, minStarVel, numStars, shipAccel
-                    , shipCircleRadius, shipDrag, shipMaxVel, worldDepth
+import Gyruss.Render (CANVAS, getCanvasElementById, getContext2D, renderLevel
+                     , renderGameOver, setCanvasHeight, setCanvasWidth)
+import Gyruss.Types (Enemy, EnemySort(..), EnemyWave, KeyState(..), Msg(..)
+                    , Polar, Vec2, Ship, Size, SoundEvent(..), Star, State
+                    , Time, Bomb, FSMState(..), blasterRechargeDistance
+                    , blasterVel, enemyRadius, framesPerSecond, generatedStars
+                    , maxBlasterBalls, maxStarR, maxStarVel, minStarVel
+                    , numStars, shipAccel, shipCircleRadius, shipDrag
+                    , shipMaxVel, shipRadius, bombRadius, worldDepth
                     , worldWidth, bombVel)
 import Gyruss.Util (actualBlasterPos, blasterRadius, polarToPos, pos2IsectPos3
-                   , scaleFactor, enemyPos, (!!!), shipPos, enemyPoints
-                   , dirBetweenPoints, outOfBounds)
+                   , pos2IsectPos2, scaleFactor, enemyPos, (!!!), shipPos
+                   , enemyPoints, dirBetweenPoints, outOfBounds)
 import Math (floor) as Math
 import Partial.Unsafe (unsafePartial)
 import Prelude (Unit, bind, clamp, const, discard, map, max, min, mod, negate
-               , pure, unit, void, ($), (&&), (*), (+), (-), (/), (<), (>)
+               , pure, unit, void, id, ($), (&&), (*), (+), (-), (/), (<), (>)
                , (>=), (==), not, (<$>), (<>), (<=))
 
 {-
@@ -59,7 +60,8 @@ Principles of input handling:
 --------------------------------------------------------------------------------
 
 main :: forall s e. Eff (random :: RANDOM, st :: ST s{-, wau :: WebAudio-}
-                        , console :: CONSOLE, canvas :: CANVAS, dom :: DOM, timer :: TIMER | e) Unit
+                        , console :: CONSOLE, canvas :: CANVAS, dom :: DOM
+                        , timer :: TIMER | e) Unit
 main = do
 --  sounds <- makeSounds
 --  state <- defaultState sounds
@@ -68,19 +70,20 @@ main = do
   let target = windowToEventTarget win
   st <- newSTRef state
   resize st
-  void $ setInterval (Int.floor (1000.0/framesPerSecond)) $ render st
+
+  setupMainLoop st
+
   addEventListener (EventType "keydown")
     -- TODO: refactor
     (eventListener $ eventListenerFor st keyCode keydown) false target
   addEventListener (EventType "keyup")
     (eventListener $ eventListenerFor st keyCode keyup) false target
-  void $ subscribeTick st
+
   subscribeMousePos st (EventType "mousemove") mouseMove
   addEventListener (EventType "resize")
     (eventListener $ eventListenerFor st (const getScreenSize) Resize) false target
 --  startSounds st
   pure unit
-
 
 getScreenSize :: forall eff.  Eff (dom :: DOM | eff) Size
 getScreenSize = do
@@ -140,6 +143,7 @@ mkDefaultState {-sounds-} = unsafePartial $ do
     , enemyWaves:        waves
     , bombs:             Nil
     , score:             0
+    , fsmState:          Level
     }
 
   where
@@ -254,8 +258,8 @@ fmod :: Number -> Number -> Number
 fmod x y = x - Math.floor (x/y)*y
 
 -- UPDATE
-update :: Msg -> State -> State
-update msg s =
+updateLevel :: Msg -> State -> State
+updateLevel msg s =
   case msg of
       NoOp -> s
       Resize sz -> s { screenSize = sz }
@@ -318,9 +322,15 @@ update msg s =
                in  s3 { enemyWaves = res.ws
                       , ship = sh { blasters = res.ps }
                       , score = s3.score + res.points }
+            -- check for bomb collisions
+            (s5 :: State) =
+               let collideB b = pos2IsectPos2 (shipPos s4.ship)
+                                  shipRadius b.pos bombRadius
+                   collision  = any id $ map collideB s.bombs
+               in if collision then s4 { fsmState = GameOver } else s4
         in   updateTime delta
            $ updateStars delta
-           $ updateBombs s4
+           $ updateBombs s5
       -- catch-all
       _ -> s
   where
@@ -479,7 +489,7 @@ eventListenerFor
   -> (Event -> Eff (console :: CONSOLE, st :: ST s, dom :: DOM | eff) Unit)
 eventListenerFor st fromEvent toMsg = \ev -> do
   a <- fromEvent ev
-  void $ modifySTRef st $ \s -> update (toMsg a) s
+  void $ modifySTRef st $ \s -> updateLevel (toMsg a) s
   pure unit
 
 subscribeMousePos
@@ -495,15 +505,27 @@ subscribeMousePos st evType toMsg = do
         Right mev -> do
           let x = clientX mev
               y = clientY mev
-          void $ modifySTRef st $ \s -> update (toMsg { x: x, y: y }) s
+          void $ modifySTRef st $ \s -> updateLevel (toMsg { x: x, y: y }) s
           pure unit
         Left _ -> pure unit
 
-subscribeTick :: forall s eff. STRef s State -> Eff (st :: ST s, timer :: TIMER | eff) Unit
-subscribeTick st = void $ setInterval (Int.floor (1000.0/framesPerSecond)) f
-  where
-    f = void $ modifySTRef st $ \s -> update (Tick (1.0/framesPerSecond)) s
 
+setupMainLoop
+  :: forall s eff. STRef s State
+  -> Eff (canvas :: CANVAS
+         , random :: RANDOM
+         , st :: ST s
+         , timer :: TIMER | eff) Unit
+setupMainLoop st = do
+  void $ setInterval (Int.floor (1000.0/framesPerSecond)) $ do
+    s <- readSTRef st
+    -- This is where the Finite State Machine is controlled from
+    case s.fsmState of
+      Level -> do
+        renderLevel st
+        void $ modifySTRef st $ \s' -> updateLevel (Tick (1.0/framesPerSecond)) s'
+      GameOver -> do
+        renderGameOver st
 
 keydown :: String -> Msg
 keydown code =

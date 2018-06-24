@@ -4,36 +4,45 @@ module Gyruss.Render (
 
 ) where
 
-import Gyruss.Types (Enemy, State, Time, Bomb, enemyRadius, maxStarR,
-                     shipCircleRadius, starRadius, worldWidth, bombRadius)
-import Gyruss.Util (blasterRadius, scaleFactor, shipPos, enemyPos)
-
-import Prelude ( Unit, bind, discard, min, negate, pure, show, unit, void
-               , ($), (*), (+),  (/), (<>))
+import Graphics.Canvas
 
 import Control.Monad.Eff (Eff)
 import Control.Monad.Eff.Random (RANDOM)
 import Control.Monad.ST (ST, STRef, modifySTRef, readSTRef)
-import Data.Traversable (traverse_, traverse)
+import Data.Int as Int
 import Data.List (List(..), concatMap)
 import Data.Maybe (Maybe(..))
-import Data.Int as Int
-import Graphics.Canvas
+import Data.Traversable (traverse_, traverse)
+import Gyruss.Types (Enemy, State, Time, Bomb, enemyRadius, maxStarR, shipCircleRadius, starRadius, worldWidth, bombRadius)
+import Gyruss.Util (blasterRadius, scaleFactor, shipPos, enemyPos)
 import Math (cos, pi, sin, floor)
+import Prelude (Unit, bind, discard, min, negate, pure, show, unit, void, ($), (*), (+), (/), (<>))
 
-render :: forall s e. STRef s State
+renderGameOver :: forall s e. STRef s State
+               -> Eff (st :: ST s, canvas :: CANVAS| e) Unit
+renderGameOver st = do
+  s <- readSTRef st
+  clearScreen s
+  toScreen s $ do
+    let ctx = s.context2D
+        fontSize = floor (30.0 / ((min s.screenSize.w s.screenSize.h) / worldWidth))
+    void $ scale { scaleX: 1.0, scaleY: -1.0 } ctx
+    void $ setFont (show fontSize <> "px Helvetica") ctx
+    void $ setFillStyle "white" ctx
+    void $ setTextAlign ctx AlignCenter
+    void $ fillText ctx "Game Over" 0.0 0.0
+
+
+renderLevel :: forall s e. STRef s State
        -> Eff (st :: ST s, random :: RANDOM
               {-, wau :: WebAudio-}, canvas :: CANVAS| e) Unit
-render st = do
+renderLevel st = do
   s <- readSTRef st
   let sz = s.screenSize
   -- FIXME: setting the canvas size every time is just dumb!
   void $ setCanvasWidth  sz.w s.canvas
   void $ setCanvasHeight sz.h s.canvas
-  let ctx = s.context2D
-  void $ setFillStyle "#000000" ctx
-  void $ fillPath ctx $ rect ctx { x: 0.0, y: 0.0
-                          , w: s.screenSize.w, h: s.screenSize.h }
+  clearScreen s
   toScreen s $ do
     renderStars s
     renderShip s "#ffffff"
@@ -48,6 +57,14 @@ render st = do
 -- playSoundEvent sounds ev =
 --   case ev of
 --     FireSound -> playBufferedSound sounds sounds.fireBuffer
+
+clearScreen :: forall e. State -> Eff (canvas :: CANVAS | e) Unit
+clearScreen s = do
+  let ctx = s.context2D
+  void $ setFillStyle "#000000" ctx
+  void $ fillPath ctx $ rect ctx { x: 0.0, y: 0.0
+                                 , w: s.screenSize.w, h: s.screenSize.h }
+
 
 
 renderScore :: forall e. State -> Eff (canvas :: CANVAS | e) Unit
@@ -188,13 +205,13 @@ circlePath :: forall e. Context2D ->  { x :: Number, y :: Number, r :: Number }
            -> Eff (canvas :: CANVAS | e) Unit
 circlePath ctx o = do
   void $ arc ctx
-          { x: o.x
-          , y: o.y
-          , r: o.r
-          , start: 0.0
-          , end: 2.0*pi }
+           { x:     o.x
+           , y:     o.y
+           , r:     o.r
+           , start: 0.0
+           , end:   2.0*pi
+           }
   pure unit
 
 colorStr :: Int -> Int -> Int -> String
 colorStr r g b = "rgb("<>show r<>","<>show g<>","<>show b<>")"
-

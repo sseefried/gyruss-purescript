@@ -41,11 +41,17 @@ blasterRadius pp = 0.5 + 0.5*(1.0 - pp.r/shipCircleRadius)
 -- Checks whether Vec2 intersects with Vec3 within a certain radius
 --
 pos2IsectPos3 :: Vec2 -> Number -> Vec3 -> Number -> Boolean
-pos2IsectPos3 p r p3 r' =
-  let dx = p.x - p3.x
-      dy = p.y - p3.y
+pos2IsectPos3 p r p3 r' = pos2IsectPos2 p r (pos3ToPos2 p3) r'
+
+pos2IsectPos2:: Vec2 -> Number -> Vec2 -> Number -> Boolean
+pos2IsectPos2 p r p' r' =
+  let dx = p.x - p'.x
+      dy = p.y - p'.y
       d  = r + r'
   in dx*dx + dy*dy < d*d
+
+pos3ToPos2 :: Vec3 -> Vec2
+pos3ToPos2 p3 = { x: p3.x, y: p3.y }
 
 -- Unsafe version of (!!)
 infix 5 unsafeIndex as !!!
