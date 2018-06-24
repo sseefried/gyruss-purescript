@@ -1,7 +1,7 @@
 module Gyruss.Util where
 
 
-import Gyruss.Types (Polar, Vec2, Vec3, Pos2, Pos3, Ship, Enemy, Time
+import Gyruss.Types (Polar, Vec2, Vec3, Ship, Enemy, Time
                     , EnemySort(..), screenDist, shipCircleRadius
                     , worldWidth)
 import Data.Array ((!!))

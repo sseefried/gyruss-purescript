@@ -25,27 +25,27 @@ import Data.List as L
 import Data.List.Lazy (replicateM, snoc, take, (!!)) as LL
 import Data.List.Lazy.Types (List, nil) as LL
 import Data.List.Types (List(..), (:))
-import Data.Map (toUnfoldable, fromFoldable, values)
 import Data.Maybe (Maybe(..), fromJust)
 import Data.Traversable (foldl)
 import Data.Tuple (Tuple(..), fst, snd)
 import Gyruss.Render (CANVAS, getCanvasElementById, getContext2D, render
                      , setCanvasHeight, setCanvasWidth)
-import Gyruss.Types (Enemy, EnemySort(..), EnemyWave, EnemyWaveId, KeyState(..)
-                    , Msg(..), Polar, Vec2, Ship, Size, SoundEvent(..)
-                    , Star, State, Time, Bomb, blasterRechargeDistance
-                    , blasterVel, enemyRadius, framesPerSecond, generatedStars
-                    , maxBlasterBalls, maxStarR, maxStarVel, minStarVel
-                    , numStars, shipAccel, shipCircleRadius, shipDrag
-                    , shipMaxVel, worldDepth, worldWidth, bombVel)
+import Gyruss.Types (Enemy, EnemySort(..), EnemyWave
+                    , KeyState(..), Msg(..), Polar, Vec2, Ship, Size
+                    , SoundEvent(..), Star, State, Time, Bomb
+                    , blasterRechargeDistance, blasterVel, enemyRadius
+                    , framesPerSecond, generatedStars, maxBlasterBalls
+                    , maxStarR, maxStarVel, minStarVel, numStars, shipAccel
+                    , shipCircleRadius, shipDrag, shipMaxVel, worldDepth
+                    , worldWidth, bombVel)
 import Gyruss.Util (actualBlasterPos, blasterRadius, polarToPos, pos2IsectPos3
                    , scaleFactor, enemyPos, (!!!), shipPos, enemyPoints
                    , dirBetweenPoints, outOfBounds)
 import Math (floor) as Math
 import Partial.Unsafe (unsafePartial)
 import Prelude (Unit, bind, clamp, const, discard, map, max, min, mod, negate
-               , pure, unit, void, ($), (&&), (*), (+), (-), (/), (<)
-               , (>), (>=), (==), not, (<$>), (<>))
+               , pure, unit, void, ($), (&&), (*), (+), (-), (/), (<), (>)
+               , (>=), (==), not, (<$>), (<>))
 
 {-
 
@@ -113,7 +113,9 @@ angleFor p = atan2 p.y p.x
 newShip :: Number -> Ship
 newShip ang = { ang: ang, angVel: 0.0, blasters: Nil }
 
-mkDefaultState :: forall e. {-Sounds ->-} Eff (random :: RANDOM, canvas :: CANVAS | e) State
+mkDefaultState
+  :: forall e. {-Sounds ->-}
+     Eff (random :: RANDOM, canvas :: CANVAS | e) State
 mkDefaultState {-sounds-} = unsafePartial $ do
   Just canvas <- getCanvasElementById "canvas"
   ctx <- getContext2D canvas
@@ -132,21 +134,20 @@ mkDefaultState {-sounds-} = unsafePartial $ do
     , starCollection:    stars
     , starField:         LL.take numStars stars
     , time:              0.0
-    , enemyWaves:        fromFoldable $
-                             mkWave 1 1.0  0.0
-                           : mkWave 2 8.5  (pi/4.0)
-                           : mkWave 3 16.0 (-pi/4.0)
-                           : mkWave 4 24.5 pi
+    , enemyWaves:            mkWave 1.0  0.0
+                           : mkWave 8.5  ( pi/4.0)
+                           : mkWave 16.0 (-pi/4.0)
+                           : mkWave 24.5 pi
                            : Nil
     , bombs:             Nil
     , score:             0
     }
 
   where
-    mkWave waveId arriveTime angle =
-      Tuple waveId { arriveTime: arriveTime
-                   , enemies: map (toEnemy angle) (zip lrs deltas)
-                   }
+    mkWave arriveTime angle =
+      { arriveTime: arriveTime
+      , enemies: map (toEnemy angle) (zip lrs deltas)
+      }
 
     mkSeq _ _ 0 = Nil
     mkSeq start inc n = start : mkSeq (start+inc) inc (n-1)
@@ -184,7 +185,7 @@ mkDefaultState {-sounds-} = unsafePartial $ do
             , funcFinish: pi/2.0
             }
           ]
-      , releaseBombAt: Just 2.0
+      , releaseBombAt: randomBombReleaseTime 1.0 2.5 0.3
       }
     maxDist = -worldDepth
 
@@ -222,6 +223,22 @@ mkDefaultState {-sounds-} = unsafePartial $ do
     xPos t = smallRad * cos t
     yPos t = smallRad * sin t
 
+
+--
+-- Returns either
+--   a) random bomb release time between `start` and `finish`
+--   b) Nothing
+--
+randomBombReleaseTime :: Number -> Number -> Number -> Maybe Number
+randomBombReleaseTime _ _ _ = Just 2.0
+
+-- randomBombReleaseTime :: forall e. Number -> Number -> Number
+--                       -> Eff (random :: RANDOM | e) (Maybe Time)
+-- randomBombReleaseTime start finish chanceOfRelease = do
+--   releaseVal <- randomRange 0.0 0.1
+--   if releaseVal <= chanceOfRelease
+--     then pure Nothing
+--     else Just <$> randomRange start finish
 
 sinU :: Number -> Number
 sinU x = sin (2.0*pi*x)
@@ -283,18 +300,18 @@ update msg s =
               -- TODO: Refactor
               let res = map (updateWave s.time s.ship) s2.enemyWaves
                   ws' = map fst res
-                  bombss = values $ map snd res
+                  bombss = map snd res
               in  s2 { enemyWaves = ws', bombs = s2.bombs <> concat bombss }
 
             -- check for collisions with enemies
             (s4 :: State) =
                let sh = s3.ship
                    res = filterWave s.time
-                            { ws: toUnfoldable s3.enemyWaves
+                            { ws: s3.enemyWaves
                             , ps: sh.blasters
                             , points: 0
                             }
-               in  s3 { enemyWaves = fromFoldable res.ws
+               in  s3 { enemyWaves = res.ws
                       , ship = sh { blasters = res.ps }
                       , score = s3.score + res.points }
         in   updateTime delta
@@ -325,16 +342,16 @@ update msg s =
           Nothing                -> Nothing
 
     filterWave :: Time
-        -> { ws :: List (Tuple EnemyWaveId EnemyWave), ps :: List Polar, points :: Int }
-        -> { ws :: List (Tuple EnemyWaveId EnemyWave), ps :: List Polar, points :: Int }
+        -> { ws :: List EnemyWave, ps :: List Polar, points :: Int }
+        -> { ws :: List EnemyWave, ps :: List Polar, points :: Int }
     filterWave t { ws: Nil, ps: ps, points: points } = { ws: Nil, ps: ps, points: points }
-    filterWave t { ws: (Cons (Tuple eid wave) waves), ps: ps, points: points } =
+    filterWave t { ws: (Cons wave waves), ps: ps, points: points } =
       let { es: es', ps: ps', points: points' } =
             if t >= wave.arriveTime
               then filterOnCollision t
                      { es: wave.enemies, ps: ps, points: points }
               else { es: wave.enemies, ps: ps, points: points }
-      in  add (Tuple eid (wave { enemies = es' })) $
+      in  add (wave { enemies = es' }) $
             filterWave t { ws: waves, ps: ps', points: points' }
       where
         add w' { ws: ws',      ps: ps', points: points' } =

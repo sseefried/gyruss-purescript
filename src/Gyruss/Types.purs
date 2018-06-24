@@ -5,7 +5,6 @@ import Prelude ((*), (/))
 -- import Audio.WebAudio.Types
 import Data.List (List)
 import Data.List.Lazy as LL
-import Data.Map (Map)
 import Data.Maybe (Maybe(..))
 import Graphics.Canvas (CanvasElement, Context2D)
 import Math (pi)
@@ -138,14 +137,12 @@ type State =
   , starCollection     :: LL.List Star
   , starField          :: LL.List Star
   , time               :: Time -- cumulative time
-  , enemyWaves         :: Map EnemyWaveId EnemyWave
+  , enemyWaves         :: List EnemyWave
   , bombs              :: List Bomb
   , score              :: Int
   }
 
 data EnemySort = Normal
-
-type EnemyWaveId = Int
 
 --
 -- An EnemyWave
@@ -179,12 +176,13 @@ holding pattern.
 --
 -- if index = pathSegments.length then the enemy is considered
 --
-type Enemy = { startedAt     :: Maybe Time
-             , sort          :: EnemySort
-             , delta         :: Number -- a delay time after which this enemy appears
-             , index         :: Int
-             , pathSegments  :: Array PathSegment
-             , releaseBombAt :: Maybe Time
+type Enemy = { startedAt           :: Maybe Time
+             , sort                :: EnemySort
+             , delta               :: Number
+             -- ^ a delay time after which this enemy appears
+             , index               :: Int
+             , pathSegments        :: Array PathSegment
+             , releaseBombAt       :: Maybe Time
              }
 
 --

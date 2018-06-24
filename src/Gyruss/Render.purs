@@ -16,7 +16,6 @@ import Control.Monad.Eff.Random (RANDOM)
 import Control.Monad.ST (ST, STRef, modifySTRef, readSTRef)
 import Data.Traversable (traverse_, traverse)
 import Data.List (List(..), concatMap)
-import Data.Map (values)
 import Data.Maybe (Maybe(..))
 import Data.Int as Int
 import Graphics.Canvas
@@ -120,7 +119,7 @@ renderShip s color = do
 renderEnemies :: forall e. State -> Eff ( canvas :: CANVAS | e ) Unit
 renderEnemies s =
   traverse_ (renderEnemy s.context2D s.time) $
-   concatMap (\w -> w.enemies) (values s.enemyWaves)
+   concatMap (\w -> w.enemies) s.enemyWaves
 
 renderEnemy :: forall e. Context2D -> Time -> Enemy
             -> Eff ( canvas :: CANVAS | e ) Unit
