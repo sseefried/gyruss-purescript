@@ -70,8 +70,8 @@ maxBlasterBalls = 3
 bombRadius :: Number
 bombRadius = 0.4
 
-bombSpeed :: Number
-bombSpeed = 2.0
+bombVel :: Number
+bombVel = 0.4
 
 --
 -- The distance a blaster ball must travel before you can fire another
@@ -84,9 +84,12 @@ blasterRechargeDistance = 10.0
 type Size = { w :: Number
             , h :: Number }
 
-type Pos = { x :: Number, y :: Number }
+type Vec2 = { x :: Number, y :: Number }
 
-type Pos3 = { x :: Number, y :: Number, z :: Number }
+type Vec3 = { x :: Number, y :: Number, z :: Number }
+
+type Pos2 = Vec2
+type Pos3 = Vec3
 
 type Polar = { r :: Number
              , ang :: Number }
@@ -109,7 +112,7 @@ data Msg
   = Fire                KeyState
   | Clockwise           KeyState
   | Anticlockwise       KeyState
-  | MouseMove           (Size -> Pos)
+  | MouseMove           (Size -> Vec2)
   | Tick                Number
   | Resize              Size
   | NoOp
@@ -197,13 +200,13 @@ type Enemy = { startedAt     :: Maybe Time
 --
 type PathSegment =
   { duration   :: Time
-  , func       :: Time -> Pos3
+  , func       :: Time -> Vec3
   , funcStart  :: Time
   , funcFinish :: Time
   }
 
 type Bomb =
-  { pos :: Pos
+  { pos :: Vec2
   , dir :: { x :: Number, y :: Number }
   -- ^ unit vector signifying direction of bomb travel
   }

@@ -32,21 +32,20 @@ import Data.Tuple (Tuple(..), fst, snd)
 import Gyruss.Render (CANVAS, getCanvasElementById, getContext2D, render
                      , setCanvasHeight, setCanvasWidth)
 import Gyruss.Types (Enemy, EnemySort(..), EnemyWave, EnemyWaveId, KeyState(..)
-                    , Msg(..), Polar, Pos, Ship, Size, SoundEvent(..), Star
-                    , State, Time, Bomb, blasterRechargeDistance, blasterVel
-                    , enemyRadius, framesPerSecond, generatedStars
+                    , Msg(..), Polar, Vec2, Ship, Size, SoundEvent(..)
+                    , Star, State, Time, Bomb, blasterRechargeDistance
+                    , blasterVel, enemyRadius, framesPerSecond, generatedStars
                     , maxBlasterBalls, maxStarR, maxStarVel, minStarVel
                     , numStars, shipAccel, shipCircleRadius, shipDrag
-                    , shipMaxVel, worldDepth, worldWidth)
-import Gyruss.Util (actualBlasterPos, blasterRadius, polarToPos, posIsectPos3
-                   , scaleFactor, enemyPos, (!!!), enemyPoints)
+                    , shipMaxVel, worldDepth, worldWidth, bombVel)
+import Gyruss.Util (actualBlasterPos, blasterRadius, polarToPos, pos2IsectPos3
+                   , scaleFactor, enemyPos, (!!!), shipPos, enemyPoints
+                   , dirBetweenPoints, outOfBounds)
 import Math (floor) as Math
 import Partial.Unsafe (unsafePartial)
 import Prelude (Unit, bind, clamp, const, discard, map, max, min, mod, negate
                , pure, unit, void, ($), (&&), (*), (+), (-), (/), (<)
                , (>), (>=), (==), not, (<$>), (<>))
-
-import Debug.Trace (spy)
 
 {-
 
@@ -299,7 +298,8 @@ update msg s =
                       , ship = sh { blasters = res.ps }
                       , score = s3.score + res.points }
         in   updateTime delta
-           $ updateStars delta s4
+           $ updateStars delta
+           $ updateBombs s4
       -- catch-all
       _ -> s
   where
@@ -312,7 +312,7 @@ update msg s =
       case enemyPos e t of
         Just enemyP3 ->
           let shipP   = polarToPos (actualBlasterPos p)
-          in if posIsectPos3
+          in if pos2IsectPos3
                   shipP (blasterRadius p)
                   enemyP3 (scaleFactor enemyP3* enemyRadius)
              then -- collision. Remove the enemy. Return the rest
@@ -420,15 +420,28 @@ update msg s =
                    false -> Just en -- leave it alone
         false -> Just en -- leave it alone
     maybeReleaseBomb :: Time -> Ship -> Enemy -> Tuple Enemy (Maybe Bomb)
-    maybeReleaseBomb t _ en =
+    maybeReleaseBomb t ship en =
       case Tuple en.releaseBombAt (enemyPos en t) of
         Tuple (Just t') (Just epos) ->
           if t > t' + en.delta
-            then let bomb = Just { pos: { x: epos.x, y: epos.y }
-                                 , dir: { x: 0.0, y: 1.0 } }
+            then let pos = { x: epos.x, y: epos.y }
+                     bomb = Just { pos: pos
+                                 , dir: dirBetweenPoints pos (shipPos ship) }
                  in  Tuple (en { releaseBombAt = Nothing }) bomb
             else Tuple en Nothing
         _ -> Tuple en Nothing
+    updateBombs :: State -> State
+    updateBombs s' = s' { bombs = catMaybes $ map updateBomb s'.bombs }
+      where
+        updateBomb :: Bomb -> Maybe Bomb
+        updateBomb b =
+          if outOfBounds b.pos
+            then Nothing
+            else
+              let pos' = { x: b.pos.x + b.dir.x * bombVel
+                         , y: b.pos.y + b.dir.y * bombVel
+                         }
+              in  Just $ b { pos = pos' }
 
 sign :: Number -> Number
 sign n = if n < 0.0 then -1.0 else 1.0
@@ -500,7 +513,7 @@ keyCode ev =
 --------------------------------------------------------------------------
 -- UTILITIES
 
-mouseToWorld :: { x :: Int, y :: Int } -> Size -> Pos
+mouseToWorld :: { x :: Int, y :: Int } -> Size -> Vec2
 mouseToWorld pos sz =
   let x' = toNumber pos.x
       y' = toNumber pos.y

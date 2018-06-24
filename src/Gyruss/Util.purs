@@ -1,29 +1,30 @@
 module Gyruss.Util where
 
 
-import Gyruss.Types (Polar, Pos, Pos3, Ship, Enemy, Time, EnemySort(..)
-                    , screenDist, shipCircleRadius)
+import Gyruss.Types (Polar, Vec2, Vec3, Pos2, Pos3, Ship, Enemy, Time
+                    , EnemySort(..), screenDist, shipCircleRadius
+                    , worldWidth)
 import Data.Array ((!!))
 import Data.Maybe (fromJust, Maybe(..))
 import Partial.Unsafe (unsafePartial)
-import Prelude ((*), (+), (-), (/), (<), ($))
-import Math (cos, sin)
+import Prelude ((*), (+), (-), (/), (<), ($), (>), (||))
+import Math (cos, sin, sqrt, abs)
 
 
 --
 -- How much to scale the x,y co-ordinates of an object that is a certain
 -- distance away in the z axis.
 --
-scaleFactor :: Pos3 -> Number
+scaleFactor :: Vec3 -> Number
 scaleFactor p3 = screenDist / (screenDist - p3.z)
 
-shipPos :: Ship -> Pos
+shipPos :: Ship -> Vec2
 shipPos ship = { x: shipCircleRadius*cos ship.ang
                , y: shipCircleRadius*sin ship.ang
                }
 
 
-polarToPos :: Polar -> Pos
+polarToPos :: Polar -> Vec2
 polarToPos pp = { x: pp.r * cos pp.ang, y: pp.r * sin pp.ang }
 
 actualBlasterPos :: Polar -> Polar
@@ -37,10 +38,10 @@ blasterRadius :: Polar -> Number
 blasterRadius pp = 0.5 + 0.5*(1.0 - pp.r/shipCircleRadius)
 
 --
--- Checks whether Pos intersects with Pos3 within a certain radius
+-- Checks whether Vec2 intersects with Vec3 within a certain radius
 --
-posIsectPos3 :: Pos -> Number -> Pos3 -> Number -> Boolean
-posIsectPos3 p r p3 r' =
+pos2IsectPos3 :: Vec2 -> Number -> Vec3 -> Number -> Boolean
+pos2IsectPos3 p r p3 r' =
   let dx = p.x - p3.x
       dy = p.y - p3.y
       d  = r + r'
@@ -55,7 +56,7 @@ unsafeIndex a i = unsafePartial $ fromJust $ a !! i
 --
 -- Calculate the position of an enemy
 --
-enemyPos :: Enemy -> Time -> Maybe Pos3
+enemyPos :: Enemy -> Time -> Maybe Vec3
 enemyPos en worldTime =
   case en.startedAt of
     Just startedAt' ->
@@ -69,3 +70,21 @@ enemyPoints :: Enemy -> Int
 enemyPoints en =
   case en.sort of
     Normal -> 50
+
+toUnitVector :: Vec2 -> Vec2
+toUnitVector { x: x, y: y } =  { x: x/d, y: y/d }
+  where
+    d = sqrt (x*x + y*y)
+
+
+--
+-- Calculates a distance vector between two points
+--
+dirBetweenPoints :: Vec2 -> Vec2 -> Vec2
+dirBetweenPoints v1 v2 = toUnitVector { x: v2.x - v1.x, y: v2.y - v1.y }
+
+
+outOfBounds :: Vec2 -> Boolean
+outOfBounds { x: x, y: y } = abs x > d || abs y > d
+  where
+    d= worldWidth/2.0
