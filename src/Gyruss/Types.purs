@@ -76,7 +76,7 @@ bombVel = 0.4
 -- The distance a blaster ball must travel before you can fire another
 --
 blasterRechargeDistance :: Number
-blasterRechargeDistance = 10.0
+blasterRechargeDistance = 15.0
 
 -- strictly these should be Ints but it's more convenient for them
 -- to be Number`s
@@ -176,13 +176,13 @@ holding pattern.
 --
 -- if index = pathSegments.length then the enemy is considered
 --
-type Enemy = { startedAt           :: Maybe Time
-             , sort                :: EnemySort
-             , delta               :: Number
+type Enemy = { startedAt       :: Maybe Time
+             , sort            :: EnemySort
+             , delta           :: Number
              -- ^ a delay time after which this enemy appears
-             , index               :: Int
-             , pathSegments        :: Array PathSegment
-             , releaseBombAt       :: Maybe Time
+             , index           :: Int
+             , pathSegments    :: Array PathSegment
+             , mbReleaseBombAt :: Maybe Time
              }
 
 --

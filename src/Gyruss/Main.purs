@@ -26,7 +26,7 @@ import Data.List.Lazy (replicateM, snoc, take, (!!)) as LL
 import Data.List.Lazy.Types (List, nil) as LL
 import Data.List.Types (List(..), (:))
 import Data.Maybe (Maybe(..), fromJust)
-import Data.Traversable (foldl)
+import Data.Traversable (foldl, sequence, traverse)
 import Data.Tuple (Tuple(..), fst, snd)
 import Gyruss.Render (CANVAS, getCanvasElementById, getContext2D, render
                      , setCanvasHeight, setCanvasWidth)
@@ -45,7 +45,7 @@ import Math (floor) as Math
 import Partial.Unsafe (unsafePartial)
 import Prelude (Unit, bind, clamp, const, discard, map, max, min, mod, negate
                , pure, unit, void, ($), (&&), (*), (+), (-), (/), (<), (>)
-               , (>=), (==), not, (<$>), (<>))
+               , (>=), (==), not, (<$>), (<>), (<=))
 
 {-
 
@@ -105,8 +105,6 @@ resize st = unsafePartial $ do
   void $ modifySTRef st $ (\s -> s { screenSize = s.screenSize { w = w', h = h' } })
   pure unit
 
-
-
 angleFor :: { x :: Number, y :: Number } -> Number
 angleFor p = atan2 p.y p.x
 
@@ -120,6 +118,11 @@ mkDefaultState {-sounds-} = unsafePartial $ do
   Just canvas <- getCanvasElementById "canvas"
   ctx <- getContext2D canvas
   stars <- randomStars generatedStars
+  waves <- sequence $   mkWave 1.0  0.0
+                      : mkWave 8.5  ( pi/4.0)
+                      : mkWave 16.0 (-pi/4.0)
+                      : mkWave 24.5 pi
+                      : Nil
   pure $
     { ship:              newShip (-pi/2.0)
     , keys:              { clockwise: KeyUp
@@ -134,20 +137,18 @@ mkDefaultState {-sounds-} = unsafePartial $ do
     , starCollection:    stars
     , starField:         LL.take numStars stars
     , time:              0.0
-    , enemyWaves:            mkWave 1.0  0.0
-                           : mkWave 8.5  ( pi/4.0)
-                           : mkWave 16.0 (-pi/4.0)
-                           : mkWave 24.5 pi
-                           : Nil
+    , enemyWaves:        waves
     , bombs:             Nil
     , score:             0
     }
 
   where
-    mkWave arriveTime angle =
-      { arriveTime: arriveTime
-      , enemies: map (toEnemy angle) (zip lrs deltas)
-      }
+    mkWave arriveTime angle = do
+      enemies <- traverse (toEnemy angle) (zip lrs deltas)
+      pure $
+        { arriveTime: arriveTime
+        , enemies: enemies
+        }
 
     mkSeq _ _ 0 = Nil
     mkSeq start inc n = start : mkSeq (start+inc) inc (n-1)
@@ -162,31 +163,37 @@ mkDefaultState {-sounds-} = unsafePartial $ do
         go 0 _ = Nil
         go n b = b : go (n-1) (not b)
 
-    toEnemy angle (Tuple onLeft delta) =
-      { startedAt: Nothing
-      , delta: delta
-      , sort: Normal
-      , index: 0
-      , pathSegments:
-          [
-            { duration:   1.5
-            , func:       rotateXY angle $ fun1 onLeft
-            , funcStart:  0.0
-            , funcFinish: pi/2.0
-            }
-          , { duration:   0.5
-            , func:       rotateXY angle $ fun2
-            , funcStart:  0.0
-            , funcFinish: 0.5
-            }
-          , { duration:   1.5
-            , func:       rotateXY angle $ fun3 onLeft
-            , funcStart:  0.0
-            , funcFinish: pi/2.0
-            }
-          ]
-      , releaseBombAt: randomBombReleaseTime 1.0 2.5 0.3
-      }
+    toEnemy :: forall e'. Number -> Tuple Boolean Number
+            -> Eff (random :: RANDOM | e') Enemy
+    toEnemy angle (Tuple onLeft delta) = do
+      let chanceOfRelease = 0.2
+      mbReleaseBombAt <- randomBombReleaseTime 2.0 3.5 chanceOfRelease
+      pure $
+        { startedAt: Nothing
+        , delta: delta
+        , sort: Normal
+        , index: 0
+        , pathSegments:
+            [
+              { duration:   1.5
+              , func:       rotateXY angle $ fun1 onLeft
+              , funcStart:  0.0
+              , funcFinish: pi/2.0
+              }
+            , { duration:   0.5
+              , func:       rotateXY angle $ fun2
+              , funcStart:  0.0
+              , funcFinish: 0.5
+              }
+            , { duration:   1.5
+              , func:       rotateXY angle $ fun3 onLeft
+              , funcStart:  0.0
+              , funcFinish: pi/2.0
+              }
+            ]
+        , mbReleaseBombAt: mbReleaseBombAt
+        }
+
     maxDist = -worldDepth
 
     smallRad = 0.7*shipCircleRadius
@@ -229,16 +236,13 @@ mkDefaultState {-sounds-} = unsafePartial $ do
 --   a) random bomb release time between `start` and `finish`
 --   b) Nothing
 --
-randomBombReleaseTime :: Number -> Number -> Number -> Maybe Number
-randomBombReleaseTime _ _ _ = Just 2.0
-
--- randomBombReleaseTime :: forall e. Number -> Number -> Number
---                       -> Eff (random :: RANDOM | e) (Maybe Time)
--- randomBombReleaseTime start finish chanceOfRelease = do
---   releaseVal <- randomRange 0.0 0.1
---   if releaseVal <= chanceOfRelease
---     then pure Nothing
---     else Just <$> randomRange start finish
+randomBombReleaseTime :: forall e. Number -> Number -> Number
+                      -> Eff (random :: RANDOM | e) (Maybe Time)
+randomBombReleaseTime start finish chanceOfRelease = do
+  releaseVal <- randomRange 0.0 1.0
+  if releaseVal <= chanceOfRelease
+    then Just <$> randomRange start finish
+    else pure Nothing
 
 sinU :: Number -> Number
 sinU x = sin (2.0*pi*x)
@@ -412,7 +416,8 @@ update msg s =
     updateWave t ship wave =
       let enemies' = catMaybes $ map (updateEnemy wave.arriveTime t)
                                         wave.enemies
-          Tuple enemies'' mbBombs = unzip $ map (maybeReleaseBomb t ship) enemies'
+          Tuple enemies'' mbBombs =
+            unzip $ map (maybeReleaseBomb wave.arriveTime t ship) enemies'
       in Tuple wave { enemies = enemies''} (catMaybes mbBombs)
 
     -- `Nothing` means enemy should be removed
@@ -430,21 +435,21 @@ update msg s =
                        then Nothing
                        else Just $
                               en { startedAt = Just t
-                                 , releaseBombAt =
+                                 , mbReleaseBombAt =
                                      (\x -> x - pathDuration) <$>
-                                       en.releaseBombAt
+                                       en.mbReleaseBombAt
                                  ,  index = en.index + 1 }
                    false -> Just en -- leave it alone
         false -> Just en -- leave it alone
-    maybeReleaseBomb :: Time -> Ship -> Enemy -> Tuple Enemy (Maybe Bomb)
-    maybeReleaseBomb t ship en =
-      case Tuple en.releaseBombAt (enemyPos en t) of
+    maybeReleaseBomb :: Time -> Time -> Ship -> Enemy -> Tuple Enemy (Maybe Bomb)
+    maybeReleaseBomb arriveTime t ship en =
+      case Tuple en.mbReleaseBombAt (enemyPos en t) of
         Tuple (Just t') (Just epos) ->
-          if t > t' + en.delta
+          if t > t' + arriveTime + en.delta
             then let pos = { x: epos.x, y: epos.y }
                      bomb = Just { pos: pos
                                  , dir: dirBetweenPoints pos (shipPos ship) }
-                 in  Tuple (en { releaseBombAt = Nothing }) bomb
+                 in  Tuple (en { mbReleaseBombAt = Nothing }) bomb
             else Tuple en Nothing
         _ -> Tuple en Nothing
     updateBombs :: State -> State
