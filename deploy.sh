@@ -1,3 +1,5 @@
 #!/bin/bash
 
-rsync -avz html/* 'playspace:/home/sseefried/sites/seanseefried.com/public/games/gyruss-ps'
+[ "$SEANSEEFRIED_DOT_ORG" != "" ] || { echo "Set SEANSEEFRIED_DOT_ORG SSH path to remote directory"; exit 1; } 
+
+rsync -avz html/* "$SEANSEEFRIED_DOT_ORG/games/gyruss-ps"
